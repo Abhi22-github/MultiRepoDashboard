@@ -1,0 +1,32 @@
+{
+  "repositories": [
+    {
+      "name": "reward",
+      "owner": "yourorg",
+      "repo": "reward-android",
+      "releaseBranch": "release",
+      "devBranch": "dev"
+    },
+    {
+      "name": "navigation",
+      "owner": "yourorg",
+      "repo": "navigation-android",
+      "releaseBranch": "release",
+      "devBranch": "dev"
+    },
+    {
+      "name": "shared-features",
+      "owner": "yourorg",
+      "repo": "shared-features-android",
+      "releaseBranch": "release",
+      "devBranch": "dev"
+    },
+    {
+      "name": "common",
+      "owner": "yourorg",
+      "repo": "common-android",
+      "releaseBranch": "release",
+      "devBranch": "dev"
+    }
+  ]
+}
