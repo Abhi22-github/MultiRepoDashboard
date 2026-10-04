@@ -17,4 +17,6 @@ actual object LocalStorageManager {
     actual fun getDarkMode(): Boolean = false
     actual fun savePinned(names: Set<String>) {}
     actual fun getPinned(): Set<String> = emptySet()
+    actual fun saveApiBase(apiBase: String) {}
+    actual fun getApiBase(): String? = null
 }

@@ -23,7 +23,7 @@ import com.example.repodashboard.ui.theme.LocalDisplayFont
 
 @Composable
 fun TokenInputScreen(
-    onTokenSaved: (String) -> Unit,
+    onTokenSaved: (String, String) -> Unit,
     isLoading: Boolean = false,
     error: String? = null
 ) {
@@ -32,6 +32,7 @@ fun TokenInputScreen(
     val display = LocalDisplayFont.current
 
     var token     by remember { mutableStateOf("") }
+    var host      by remember { mutableStateOf("") }
     var showToken by remember { mutableStateOf(false) }
 
     Box(
@@ -62,6 +63,22 @@ fun TokenInputScreen(
 
             Spacer(Modifier.height(28.dp)); HorizontalDivider(color = c.Border); Spacer(Modifier.height(24.dp))
 
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("GitHub host", fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.TextPrimary)
+                OutlinedTextField(
+                    value = host, onValueChange = { host = it },
+                    placeholder = { Text("github.mycompany.com — blank for github.com", fontFamily = Mono, fontSize = 12.sp, color = c.TextMuted) },
+                    modifier = Modifier.fillMaxWidth(), enabled = !isLoading, singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = c.Primary, unfocusedBorderColor = c.Border,
+                        focusedContainerColor = c.Surface, unfocusedContainerColor = c.Surface,
+                        focusedTextColor = c.TextPrimary, unfocusedTextColor = c.TextPrimary
+                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Mono, fontSize = 14.sp)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Personal Access Token", fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = c.TextPrimary)
                 OutlinedTextField(
@@ -97,7 +114,7 @@ fun TokenInputScreen(
 
             Spacer(Modifier.height(20.dp))
             Button(
-                onClick = { if (token.isNotBlank()) onTokenSaved(token.trim()) },
+                onClick = { if (token.isNotBlank()) onTokenSaved(token.trim(), host.trim()) },
                 enabled = token.isNotBlank() && !isLoading,
                 modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = c.Primary)

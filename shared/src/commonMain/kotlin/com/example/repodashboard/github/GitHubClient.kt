@@ -9,14 +9,17 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
 
-class GitHubClient(private val token: String) {
+class GitHubClient(
+    private val token: String,
+    baseUrl: String = "https://api.github.com"
+) {
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
     }
 
-    private val baseUrl = "https://api.github.com"
+    private val baseUrl = baseUrl.trimEnd('/')
 
     private fun HttpRequestBuilder.addHeaders() {
         header("Authorization", "Bearer $token")
@@ -24,12 +27,21 @@ class GitHubClient(private val token: String) {
         header("X-GitHub-Api-Version", "2022-11-28")
     }
 
-    suspend fun validateToken(): Boolean {
+    /** Returns null when the token is valid, otherwise a human-readable reason it failed. */
+    suspend fun validateToken(): String? {
         return try {
             val response = client.get("$baseUrl/user") { addHeaders() }
-            response.status.isSuccess()
+            when {
+                response.status.isSuccess() -> null
+                response.status == HttpStatusCode.Unauthorized ->
+                    "Token rejected (401). It may be mistyped, expired, or revoked. Re-copy the whole token and try again."
+                response.status == HttpStatusCode.Forbidden ->
+                    "Access forbidden (403). If this is a fine-grained token on organization repos, the org must approve it first: Org Settings → Third-party Access → Personal access tokens."
+                else ->
+                    "GitHub returned ${response.status.value} ${response.status.description}."
+            }
         } catch (e: Exception) {
-            false
+            "Could not reach GitHub (${e.message ?: "network or CORS error"})."
         }
     }
 
@@ -80,7 +92,10 @@ class GitHubClient(private val token: String) {
 
     suspend fun getUserRepos(): Result<List<GitHubRepoItem>> {
         return try {
-            val all = mutableListOf<GitHubRepoItem>()
+            // De-duplicate by full_name while preserving discovery order.
+            val byName = LinkedHashMap<String, GitHubRepoItem>()
+
+            // 1) Repos the user is directly affiliated with (owner / collaborator / org member).
             var page = 1
             while (true) {
                 val response = client.get("$baseUrl/user/repos") {
@@ -88,16 +103,48 @@ class GitHubClient(private val token: String) {
                     parameter("per_page", 100)
                     parameter("page", page)
                     parameter("sort", "updated")
-                    parameter("affiliation", "owner,organization_member")
+                    parameter("visibility", "all")
+                    parameter("affiliation", "owner,collaborator,organization_member")
                 }
                 if (!response.status.isSuccess()) break
                 val batch: List<GitHubRepoItem> = response.body()
                 if (batch.isEmpty()) break
-                all.addAll(batch)
+                batch.forEach { byName[it.full_name] = it }
                 if (batch.size < 100) break
                 page++
             }
-            Result.success(all)
+
+            // 2) Per-org listing with type=all — surfaces INTERNAL repos that /user/repos omits.
+            val orgs: List<GitHubRepoOwner> = try {
+                val resp = client.get("$baseUrl/user/orgs") {
+                    addHeaders()
+                    parameter("per_page", 100)
+                }
+                if (resp.status.isSuccess()) resp.body() else emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+
+            for (org in orgs) {
+                var orgPage = 1
+                while (true) {
+                    val response = client.get("$baseUrl/orgs/${org.login}/repos") {
+                        addHeaders()
+                        parameter("per_page", 100)
+                        parameter("page", orgPage)
+                        parameter("type", "all")
+                        parameter("sort", "updated")
+                    }
+                    if (!response.status.isSuccess()) break
+                    val batch: List<GitHubRepoItem> = response.body()
+                    if (batch.isEmpty()) break
+                    batch.forEach { byName[it.full_name] = it }
+                    if (batch.size < 100) break
+                    orgPage++
+                }
+            }
+
+            Result.success(byName.values.toList())
         } catch (e: Exception) {
             Result.failure(APIError("NETWORK_ERROR", "Failed to load repos: ${e.message}", null))
         }

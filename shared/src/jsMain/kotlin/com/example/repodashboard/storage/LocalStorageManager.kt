@@ -13,6 +13,7 @@ private const val PLANS_KEY = "release-tool:release-plans"
 private const val CONFIG_KEY = "release-tool:app-config"
 private const val THEME_KEY = "release-tool:dark-mode"
 private const val PINNED_KEY = "release-tool:pinned"
+private const val API_BASE_KEY = "release-tool:api-base"
 
 actual object LocalStorageManager {
     actual fun saveToken(token: String) {
@@ -63,4 +64,10 @@ actual object LocalStorageManager {
 
     actual fun getPinned(): Set<String> =
         localStorage.getItem(PINNED_KEY)?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+
+    actual fun saveApiBase(apiBase: String) {
+        localStorage.setItem(API_BASE_KEY, apiBase)
+    }
+
+    actual fun getApiBase(): String? = localStorage.getItem(API_BASE_KEY)
 }

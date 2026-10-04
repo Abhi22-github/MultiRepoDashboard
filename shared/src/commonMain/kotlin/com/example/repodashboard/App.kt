@@ -24,8 +24,9 @@ fun App() {
 
         LaunchedEffect(Unit) {
             val token = LocalStorageManager.getToken() ?: return@LaunchedEffect
-            val client = GitHubClient(token)
-            if (client.validateToken()) {
+            val apiBase = LocalStorageManager.getApiBase() ?: "https://api.github.com"
+            val client = GitHubClient(token, apiBase)
+            if (client.validateToken() == null) {
                 gitHubClient = client
                 appState = appState.copy(githubToken = token)
                 val config = LocalStorageManager.getAppConfig()
@@ -46,13 +47,16 @@ fun App() {
                 TokenInputScreen(
                     isLoading = isValidatingToken,
                     error = appState.error,
-                    onTokenSaved = { token ->
+                    onTokenSaved = { token, host ->
                         scope.launch {
                             isValidatingToken = true
                             appState = appState.copy(error = null)
-                            val client = GitHubClient(token)
-                            if (client.validateToken()) {
+                            val apiBase = normalizeApiBase(host)
+                            val client = GitHubClient(token, apiBase)
+                            val validationError = client.validateToken()
+                            if (validationError == null) {
                                 LocalStorageManager.saveToken(token)
+                                LocalStorageManager.saveApiBase(apiBase)
                                 gitHubClient = client
                                 appState = appState.copy(githubToken = token)
                                 val config = LocalStorageManager.getAppConfig()
@@ -64,7 +68,7 @@ fun App() {
                                 }
                             } else {
                                 client.close()
-                                appState = appState.copy(error = "Invalid GitHub token. Check it has 'repo' read scope.")
+                                appState = appState.copy(error = validationError)
                             }
                             isValidatingToken = false
                         }
@@ -130,6 +134,22 @@ fun App() {
                 )
             }
         }
+    }
+}
+
+/**
+ * Turns a user-entered GitHub host into the correct REST API base URL.
+ *  - blank                     -> https://api.github.com          (public GitHub / Enterprise Cloud)
+ *  - github.mycompany.com      -> https://github.mycompany.com/api/v3  (Enterprise Server)
+ *  - mycompany.ghe.com         -> https://api.mycompany.ghe.com   (Enterprise Cloud, data residency)
+ */
+private fun normalizeApiBase(input: String): String {
+    var s = input.trim().removePrefix("https://").removePrefix("http://")
+    s = s.substringBefore("/").trim()
+    return when {
+        s.isEmpty() || s == "github.com" || s == "api.github.com" -> "https://api.github.com"
+        s.endsWith(".ghe.com") -> if (s.startsWith("api.")) "https://$s" else "https://api.$s"
+        else -> "https://$s/api/v3"
     }
 }
 

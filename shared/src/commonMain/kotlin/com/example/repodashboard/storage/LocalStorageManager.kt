@@ -17,4 +17,6 @@ expect object LocalStorageManager {
     fun getDarkMode(): Boolean
     fun savePinned(names: Set<String>)
     fun getPinned(): Set<String>
+    fun saveApiBase(apiBase: String)
+    fun getApiBase(): String?
 }
