@@ -2,10 +2,10 @@ package com.example.repodashboard.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,16 +15,16 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -39,16 +39,12 @@ import com.example.repodashboard.models.ReleaseData
 import com.example.repodashboard.models.ReleaseInfo
 import com.example.repodashboard.models.Repository
 import com.example.repodashboard.openUrl
-import com.example.repodashboard.ui.theme.AppColorScheme
-import com.example.repodashboard.ui.theme.FeatherIcons
-import com.example.repodashboard.ui.theme.LocalAppColors
-import com.example.repodashboard.ui.theme.LocalBodyFont
-import com.example.repodashboard.ui.theme.LocalDisplayFont
+import com.example.repodashboard.ui.theme.*
 
 private enum class DetailTab { Open, Drafts, Releases }
 
 @Composable
-fun RepoDetailScreen(repo: Repository, client: GitHubClient?, onBack: () -> Unit) {
+fun RepoDetailScreen(repo: Repository, client: GitHubClient?, onBack: () -> Unit, accent: Color = HotPink) {
     val c       = LocalAppColors.current
     val body    = LocalBodyFont.current
     val display = LocalDisplayFont.current
@@ -69,58 +65,63 @@ fun RepoDetailScreen(repo: Repository, client: GitHubClient?, onBack: () -> Unit
 
     Column(Modifier.fillMaxSize()) {
         // ── Header ──────────────────────────────────────────────────
-        Column(Modifier.fillMaxWidth().background(c.Surface).padding(horizontal = 40.dp, vertical = 24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            Modifier.fillMaxWidth().background(accent)
+                .stripes(Color.White.copy(alpha = 0.2f), gap = 28.dp, width = 10.dp)
+                .padding(start = 40.dp, end = 40.dp, top = 22.dp, bottom = 26.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 val bc = remember { MutableInteractionSource() }
-                Text("Dashboard", fontFamily = body, fontSize = 12.sp, color = c.TextMuted,
-                    modifier = Modifier.clip(RoundedCornerShape(4.dp)).hoverable(bc).clickable(bc, indication = null) { onBack() })
-                Icon(FeatherIcons.ChevronRight, null, tint = c.TextMuted, modifier = Modifier.size(13.dp))
-                Text(repo.repo, fontFamily = body, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = c.TextSecondary)
+                val bcHover by bc.collectIsHoveredAsState()
+                Box(
+                    Modifier.block(if (bcHover) Sunshine else Cream, InkBlack, InkBlack, RoundedCornerShape(50), 2.dp, 2.dp)
+                        .hoverable(bc).clickable(interactionSource = bc, indication = null) { onBack() }
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) { Text("← DASHBOARD", fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, letterSpacing = 0.8.sp, color = InkBlack) }
+                Icon(FeatherIcons.ChevronRight, null, tint = InkBlack, modifier = Modifier.size(14.dp))
+                Text(repo.repo.uppercase(), fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, letterSpacing = 0.8.sp, color = InkBlack)
             }
 
-            Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Box(Modifier.size(48.dp).background(c.PrimaryLight, RoundedCornerShape(13.dp)), contentAlignment = Alignment.Center) {
-                    Text(repo.repo.take(1).uppercase(), fontFamily = display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = c.Primary)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(repo.repo, fontFamily = display, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = c.TextPrimary)
-                        if (repo.version.isNotBlank()) {
-                            Row(
-                                modifier = Modifier.border(1.dp, c.Primary, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(FeatherIcons.Tag, null, tint = c.Primary, modifier = Modifier.size(11.dp))
-                                Text("v${repo.version}", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = c.Primary)
-                            }
-                        }
+            Spacer(Modifier.height(20.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Monogram(repo.repo.take(1), Cream, size = 72.dp, rotation = -7f)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(repo.repo, fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 42.sp, lineHeight = 46.sp, letterSpacing = (-0.5).sp, color = InkBlack, maxLines = 1)
+                        if (repo.version.isNotBlank()) Sticker("v${repo.version}", Sunshine, rotation = 6f, fontSize = 13.sp, icon = FeatherIcons.Tag)
                     }
-                    Text(repo.owner, fontFamily = body, fontSize = 13.sp, color = c.TextMuted)
+                    Text("@${repo.owner}", fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = InkBlack.copy(alpha = 0.75f))
                 }
-                GitHubButton(c, body) { openUrl("https://github.com/${repo.owner}/${repo.repo}") }
+                MaxButton("View on GitHub", { openUrl("https://github.com/${repo.owner}/${repo.repo}") }, fill = Cream, icon = FeatherIcons.ExternalLink, compact = true)
             }
             if (repo.description.isNotBlank()) {
-                Spacer(Modifier.height(14.dp))
-                Text(repo.description, fontFamily = body, fontSize = 13.sp, lineHeight = 20.sp, color = c.TextSecondary)
+                Spacer(Modifier.height(18.dp))
+                Box(
+                    Modifier.widthIn(max = 760.dp)
+                        .block(Cream, InkBlack, InkBlack, RoundedCornerShape(14.dp), 4.dp, 3.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(repo.description, fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 21.sp, color = InkBlack)
+                }
             }
         }
+        Box(Modifier.fillMaxWidth().height(4.dp).background(c.Ink))
 
         // ── Tabs ────────────────────────────────────────────────────
-        Column(Modifier.fillMaxWidth().background(c.Surface)) {
-            Row(modifier = Modifier.padding(horizontal = 40.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                TabItem(FeatherIcons.GitPullRequest, "Open PRs", openPRs.size, tab == DetailTab.Open, c, body) { tab = DetailTab.Open }
-                TabItem(FeatherIcons.Edit, "Drafts", draftPRs.size, tab == DetailTab.Drafts, c, body) { tab = DetailTab.Drafts }
-                TabItem(FeatherIcons.Tag, "Releases", releaseData?.releases?.size, tab == DetailTab.Releases, c, body) { tab = DetailTab.Releases }
-            }
-            HorizontalDivider(color = c.Border)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 40.dp, end = 40.dp, top = 24.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TabItem(FeatherIcons.GitPullRequest, "Open PRs", openPRs.size, tab == DetailTab.Open, Lime) { tab = DetailTab.Open }
+            TabItem(FeatherIcons.Edit, "Drafts", draftPRs.size, tab == DetailTab.Drafts, Aqua) { tab = DetailTab.Drafts }
+            TabItem(FeatherIcons.Tag, "Releases", releaseData?.releases?.size, tab == DetailTab.Releases, Sunshine) { tab = DetailTab.Releases }
         }
 
         // ── Content ─────────────────────────────────────────────────
-        Box(Modifier.fillMaxSize().background(c.Background)) {
+        Box(Modifier.fillMaxSize()) {
             AnimatedContent(
                 targetState = tab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                transitionSpec = { (fadeIn(tween(200)) + scaleIn(tween(220), initialScale = 0.97f)) togetherWith fadeOut(tween(120)) },
                 label = "tab"
             ) { t ->
                 when (t) {
@@ -140,55 +141,60 @@ private fun PRList(prs: List<GitHubPR>, isDraft: Boolean, c: AppColorScheme, bod
     if (prs.isEmpty()) {
         EmptyState(
             if (isDraft) FeatherIcons.Edit else FeatherIcons.CheckCircle,
-            if (isDraft) "No drafts" else "No open pull requests",
+            if (isDraft) "No drafts" else "Inbox zero!",
             if (isDraft) "No draft pull requests here." else "This repository has no open PRs right now.",
-            if (isDraft) c.TextMuted else c.Success, c, body
+            if (isDraft) Aqua else Lime, c, body
         )
         return
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp),
-        contentPadding = PaddingValues(vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 40.dp, end = 48.dp, top = 22.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        items(prs, key = { it.number }) { pr -> PRCard(pr, c, body) }
+        itemsIndexed(prs, key = { _, pr -> pr.number }) { i, pr -> PRCard(pr, if (isDraft) Aqua else c.accent(i), c, body) }
     }
 }
 
 @Composable
-private fun PRCard(pr: GitHubPR, c: AppColorScheme, body: FontFamily) {
+private fun PRCard(pr: GitHubPR, spine: Color, c: AppColorScheme, body: FontFamily) {
     val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val elevation by animateDpAsState(if (hovered) 6.dp else 0.dp, tween(200))
-    val borderColor by animateColorAsState(if (hovered) c.PrimaryMid else c.Border, tween(200))
+    val lift = rememberLift(interaction, hoverLift = 4.dp)
+    val shape = RoundedCornerShape(18.dp)
 
     Row(
-        modifier = Modifier.fillMaxWidth()
-            .shadow(elevation, RoundedCornerShape(14.dp), clip = false)
-            .clip(RoundedCornerShape(14.dp)).background(c.Surface)
-            .border(1.dp, borderColor, RoundedCornerShape(14.dp))
-            .hoverable(interaction).clickable(interaction, indication = null) { if (pr.html_url.isNotBlank()) openUrl(pr.html_url) }
-            .padding(18.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .offset(-lift, -lift)
+            .block(c.Surface, c.Ink, c.Shadow, shape, shadowOffset = 6.dp + lift, borderWidth = 3.dp)
+            .hoverable(interaction).clickable(interactionSource = interaction, indication = null) { if (pr.html_url.isNotBlank()) openUrl(pr.html_url) }
     ) {
-        Box(Modifier.padding(top = 3.dp)) {
-            Icon(FeatherIcons.GitPullRequest, null, tint = if (pr.draft) c.TextMuted else c.Success, modifier = Modifier.size(16.dp))
+        // Colored spine with the PR number
+        Box(
+            Modifier.width(76.dp).fillMaxHeight().background(spine)
+                .dots(InkBlack.copy(alpha = 0.18f), spacing = 10.dp, radius = 1.4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(FeatherIcons.GitPullRequest, null, tint = InkBlack, modifier = Modifier.size(18.dp))
+                Text("#${pr.number}", fontFamily = LocalDisplayFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = InkBlack)
+            }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(pr.title, fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp, color = c.TextPrimary)
+        Box(Modifier.width(3.dp).fillMaxHeight().background(c.Ink))
+        Column(Modifier.weight(1f).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(pr.title, fontFamily = LocalDisplayFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, lineHeight = 22.sp, color = c.TextPrimary)
             if (pr.labels.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { pr.labels.take(5).forEach { LabelChip(it, body) } }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { pr.labels.take(5).forEach { LabelChip(it, body) } }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Avatar(pr.user.login, c, body)
-                Text(pr.user.login, fontFamily = body, fontSize = 12.sp, color = c.TextSecondary)
-                Text("·", fontSize = 12.sp, color = c.TextMuted)
-                Text("opened ${pr.created_at.take(10)}", fontFamily = body, fontSize = 12.sp, color = c.TextMuted)
+                Text(pr.user.login, fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = c.TextPrimary)
+                Text("✦", fontSize = 10.sp, color = c.Primary)
+                Text("opened ${pr.created_at.take(10)}", fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.TextMuted)
+                if (pr.draft) Sticker("draft", Aqua, rotation = -4f, fontSize = 9.sp)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("#${pr.number}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.TextMuted)
-            Icon(FeatherIcons.ExternalLink, null, tint = c.TextMuted, modifier = Modifier.size(13.dp))
+        Box(Modifier.padding(end = 18.dp).fillMaxHeight(), contentAlignment = Alignment.Center) {
+            Icon(FeatherIcons.ExternalLink, null, tint = c.TextMuted, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -198,83 +204,92 @@ private fun PRCard(pr: GitHubPR, c: AppColorScheme, body: FontFamily) {
 @Composable
 private fun ReleasesTab(data: ReleaseData?, loading: Boolean, c: AppColorScheme, body: FontFamily, display: FontFamily) {
     if (loading || data == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator(color = c.Primary, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
-                Text("Loading releases…", fontFamily = body, fontSize = 13.sp, color = c.TextSecondary)
-            }
-        }
+        MaxLoader("Loading releases…")
         return
     }
     if (data.releases.isEmpty() && data.unreleased.isEmpty()) {
-        EmptyState(FeatherIcons.Tag, "No releases", "This repository has no published releases.", c.TextMuted, c, body)
+        EmptyState(FeatherIcons.Tag, "No releases", "This repository has no published releases.", Sunshine, c, body)
         return
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 40.dp),
-        contentPadding = PaddingValues(vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 40.dp, end = 48.dp, top = 22.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         if (data.unreleased.isNotEmpty()) {
             item {
-                Column(
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .background(c.WarningLight).border(1.dp, c.Warning.copy(alpha = 0.35f), RoundedCornerShape(14.dp)).padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                        Icon(FeatherIcons.Clock, null, tint = c.Warning, modifier = Modifier.size(16.dp))
-                        Text("Unreleased", fontFamily = display, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = c.Warning)
-                        CountPill(data.unreleased.size, c.Warning, c.Warning.copy(alpha = 0.18f), body)
-                        Spacer(Modifier.weight(1f))
-                        Text("merged, not in latest release", fontFamily = body, fontSize = 11.sp, color = c.TextMuted)
+                Box {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .block(Sunshine, c.Ink, c.Shadow, RoundedCornerShape(20.dp), shadowOffset = 7.dp, borderWidth = 3.dp)
+                            .stripes(Color.White.copy(alpha = 0.3f), gap = 26.dp, width = 9.dp)
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(FeatherIcons.Clock, null, tint = InkBlack, modifier = Modifier.size(20.dp))
+                            Text("UNRELEASED", fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = 0.5.sp, color = InkBlack)
+                            BurstBadge(data.unreleased.size, HotPink, size = 36.dp, rotation = 8f)
+                            Spacer(Modifier.weight(1f))
+                            Text("merged, not in latest release", fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = InkBlack.copy(alpha = 0.75f))
+                        }
+                        Column(
+                            Modifier.fillMaxWidth().block(Cream, InkBlack, InkBlack, RoundedCornerShape(14.dp), 0.dp, 2.dp).padding(6.dp)
+                        ) {
+                            data.unreleased.forEach { pr -> MergedPRRow(pr, onLight = true, c, body) }
+                        }
                     }
-                    data.unreleased.forEach { pr -> MergedPRRow(pr, c, body) }
+                    Sticker("ship it?", HotPink, rotation = 10f, fontSize = 12.sp, modifier = Modifier.align(Alignment.TopEnd).offset(8.dp, (-14).dp))
                 }
             }
-            item { Spacer(Modifier.height(2.dp)) }
         }
-        items(data.releases, key = { it.tagName }) { rel -> ReleaseCard(rel, c, body, display) }
+        itemsIndexed(data.releases, key = { _, r -> r.tagName }) { i, rel -> ReleaseCard(rel, c.accent(i + 2), c, body, display) }
     }
 }
 
 @Composable
-private fun ReleaseCard(rel: ReleaseInfo, c: AppColorScheme, body: FontFamily, display: FontFamily) {
+private fun ReleaseCard(rel: ReleaseInfo, accent: Color, c: AppColorScheme, body: FontFamily, display: FontFamily) {
     var expanded by remember(rel.tagName) { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val lift = rememberLift(interaction, hoverLift = 3.dp)
 
     Column(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.Surface).border(1.dp, c.Border, RoundedCornerShape(14.dp))
+        modifier = Modifier.fillMaxWidth()
+            .offset(-lift, -lift)
+            .block(c.Surface, c.Ink, c.Shadow, RoundedCornerShape(18.dp), shadowOffset = 6.dp + lift, borderWidth = 3.dp)
     ) {
-        val interaction = remember { MutableInteractionSource() }
         Row(
-            modifier = Modifier.fillMaxWidth().clickable(interaction, indication = null) { expanded = !expanded }.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.fillMaxWidth()
+                .hoverable(interaction).clickable(interactionSource = interaction, indication = null) { expanded = !expanded }
+                .padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Box(Modifier.size(34.dp).background(c.PrimaryLight, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-                Icon(FeatherIcons.Package, null, tint = c.Primary, modifier = Modifier.size(17.dp))
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(rel.tagName, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = c.TextPrimary)
-                    if (rel.prs.isNotEmpty()) CountPill(rel.prs.size, c.Primary, c.Primary.copy(alpha = 0.14f), body)
+            Box(
+                Modifier.size(46.dp).rotate(-6f).block(accent, c.Ink, c.Shadow, RoundedCornerShape(13.dp), 3.dp, 3.dp),
+                contentAlignment = Alignment.Center
+            ) { Icon(FeatherIcons.Package, null, tint = InkBlack, modifier = Modifier.size(22.dp).rotate(6f)) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(rel.tagName, fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.TextPrimary)
+                    if (rel.prs.isNotEmpty()) BurstBadge(rel.prs.size, accent, size = 30.dp, rotation = -8f)
                 }
                 Text(
                     if (rel.name != rel.tagName && rel.name.isNotBlank()) "${rel.name} · ${rel.publishedAt.take(10)}" else rel.publishedAt.take(10),
-                    fontFamily = body, fontSize = 12.sp, color = c.TextMuted, maxLines = 1
+                    fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.TextMuted, maxLines = 1
                 )
             }
-            IconButtonSmall(FeatherIcons.ExternalLink, c) { openUrl(rel.htmlUrl) }
-            Icon(if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight, null, tint = c.TextMuted, modifier = Modifier.size(16.dp))
+            MaxIconButton(FeatherIcons.ExternalLink, { openUrl(rel.htmlUrl) }, fill = Cream, size = 32.dp)
+            MaxIconButton(if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight, { expanded = !expanded }, fill = accent, size = 32.dp)
         }
         if (expanded) {
-            HorizontalDivider(color = c.Divider, modifier = Modifier.padding(horizontal = 18.dp))
+            Box(Modifier.fillMaxWidth().padding(horizontal = 18.dp)) { Squiggle(accent, amplitude = 3.dp, wavelength = 16.dp, stroke = 3.dp) }
             if (rel.prs.isEmpty()) {
                 Text("No pull requests detected for this release. Open it on GitHub for details.",
-                    fontFamily = body, fontSize = 12.sp, color = c.TextMuted, modifier = Modifier.padding(18.dp))
+                    fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = c.TextMuted, modifier = Modifier.padding(18.dp))
             } else {
-                Column(Modifier.padding(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    rel.prs.forEach { pr -> MergedPRRow(pr, c, body) }
+                Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    rel.prs.forEach { pr -> MergedPRRow(pr, onLight = false, c, body) }
                 }
             }
         }
@@ -282,110 +297,95 @@ private fun ReleaseCard(rel: ReleaseInfo, c: AppColorScheme, body: FontFamily, d
 }
 
 @Composable
-private fun MergedPRRow(pr: MergedPR, c: AppColorScheme, body: FontFamily) {
+private fun MergedPRRow(pr: MergedPR, onLight: Boolean, c: AppColorScheme, body: FontFamily) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val bg by animateColorAsState(if (hovered) c.SurfaceHover else Color.Transparent, tween(150))
+    val bg by animateColorAsState(if (hovered) (if (onLight) Sunshine else c.SurfaceVariant) else Color.Transparent, tween(150))
+    val fg = if (onLight) InkBlack else c.TextPrimary
+    val muted = if (onLight) InkBlack.copy(alpha = 0.6f) else c.TextMuted
     Row(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(9.dp)).background(bg)
-            .hoverable(interaction).clickable(interaction, indication = null) { if (pr.prUrl.isNotBlank()) openUrl(pr.prUrl) }
+        modifier = Modifier.fillMaxWidth().background(bg, RoundedCornerShape(10.dp))
+            .hoverable(interaction).clickable(interactionSource = interaction, indication = null) { if (pr.prUrl.isNotBlank()) openUrl(pr.prUrl) }
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Icon(FeatherIcons.GitPullRequest, null, tint = c.Success, modifier = Modifier.size(14.dp))
-        Text("#${pr.id}", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.TextMuted)
-        Text(pr.title, fontFamily = body, fontSize = 13.sp, color = c.TextPrimary, maxLines = 1, modifier = Modifier.weight(1f))
-        Text(pr.author, fontFamily = body, fontSize = 11.sp, color = c.TextMuted)
-        Icon(FeatherIcons.ExternalLink, null, tint = c.TextMuted, modifier = Modifier.size(12.dp))
+        Box(
+            Modifier.background(Lime, RoundedCornerShape(50)).border(2.dp, InkBlack, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp)
+        ) { Text("#${pr.id}", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = InkBlack) }
+        Text(pr.title, fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = fg, maxLines = 1, modifier = Modifier.weight(1f))
+        Text(pr.author, fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = muted)
+        Icon(FeatherIcons.ExternalLink, null, tint = muted, modifier = Modifier.size(12.dp))
     }
 }
 
 // ── Shared pieces ────────────────────────────────────────────────
 
 @Composable
-private fun TabItem(icon: ImageVector, label: String, count: Int?, selected: Boolean, c: AppColorScheme, body: FontFamily, onClick: () -> Unit) {
+private fun TabItem(icon: ImageVector, label: String, count: Int?, selected: Boolean, accent: Color, onClick: () -> Unit) {
+    val c = LocalAppColors.current
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    val fg by animateColorAsState(when { selected -> c.Primary; hovered -> c.TextPrimary; else -> c.TextSecondary }, tween(150))
-    val underline by animateColorAsState(if (selected) c.Primary else Color.Transparent, tween(150))
-    Column(
-        modifier = Modifier.width(IntrinsicSize.Max).hoverable(interaction).clickable(interaction, indication = null) { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = fg, modifier = Modifier.size(15.dp))
-            Text(label, fontFamily = body, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, fontSize = 14.sp, color = fg)
-            if (count != null) CountPill(count, if (selected) c.Primary else c.TextMuted, if (selected) c.Primary.copy(alpha = 0.14f) else c.SurfaceVariant, body)
-        }
-        Box(Modifier.padding(horizontal = 4.dp).height(2.dp).fillMaxWidth().background(underline, RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)))
-    }
-}
-
-@Composable
-private fun CountPill(count: Int, fg: Color, bg: Color, body: FontFamily) {
-    Box(
-        modifier = Modifier.defaultMinSize(minWidth = 20.dp, minHeight = 20.dp).background(bg, CircleShape).padding(horizontal = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text("$count", fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = fg)
-    }
-}
-
-@Composable
-private fun GitHubButton(c: AppColorScheme, body: FontFamily, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val bg by animateColorAsState(if (hovered) c.SurfaceVariant else c.Surface, tween(150))
+    val lift = rememberLift(interaction, hoverLift = 2.dp)
+    val shape = RoundedCornerShape(14.dp)
+    val bg = when { selected -> accent; hovered -> c.SurfaceVariant; else -> c.Surface }
+    val fg = if (selected) InkBlack else c.TextPrimary
     Row(
-        modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(bg).border(1.dp, c.Border, RoundedCornerShape(9.dp))
-            .hoverable(interaction).clickable(interaction, indication = null) { onClick() }.padding(horizontal = 14.dp, vertical = 9.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically
+        modifier = Modifier
+            .offset(-lift, -lift)
+            .block(bg, c.Ink, c.Shadow, shape, shadowOffset = (if (selected) 5.dp else 2.dp) + lift, borderWidth = 3.dp)
+            .hoverable(interaction).clickable(interactionSource = interaction, indication = null) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("View on GitHub", fontFamily = body, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = c.TextSecondary)
-        Icon(FeatherIcons.ExternalLink, null, tint = c.TextMuted, modifier = Modifier.size(13.dp))
+        Icon(icon, null, tint = fg, modifier = Modifier.size(16.dp))
+        Text(label.uppercase(), fontFamily = LocalDisplayFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, letterSpacing = 0.8.sp, color = fg)
+        if (count != null) {
+            Box(
+                Modifier.defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
+                    .background(if (selected) Cream else accent, CircleShape).border(2.dp, if (selected) InkBlack else c.Ink, CircleShape)
+                    .padding(horizontal = 6.dp),
+                contentAlignment = Alignment.Center
+            ) { Text("$count", fontFamily = LocalBodyFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = InkBlack) }
+        }
     }
-}
-
-@Composable
-private fun IconButtonSmall(icon: ImageVector, c: AppColorScheme, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val bg by animateColorAsState(if (hovered) c.SurfaceVariant else Color.Transparent, tween(150))
-    Box(
-        modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)).background(bg)
-            .hoverable(interaction).clickable(interaction, indication = null) { onClick() },
-        contentAlignment = Alignment.Center
-    ) { Icon(icon, null, tint = c.TextMuted, modifier = Modifier.size(15.dp)) }
 }
 
 @Composable
 private fun Avatar(name: String, c: AppColorScheme, body: FontFamily) {
-    Box(Modifier.size(20.dp).background(c.SurfaceVariant, CircleShape), contentAlignment = Alignment.Center) {
-        Text(name.take(1).uppercase(), fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 9.sp, color = c.TextSecondary)
+    Box(
+        Modifier.size(24.dp).background(c.accent(name.hashCode()), CircleShape).border(2.dp, c.Ink, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(name.take(1).uppercase(), fontFamily = body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = InkBlack)
     }
 }
 
 @Composable
-private fun EmptyState(icon: ImageVector, title: String, subtitle: String, iconColor: Color, c: AppColorScheme, body: FontFamily) {
+private fun EmptyState(icon: ImageVector, title: String, subtitle: String, fill: Color, c: AppColorScheme, body: FontFamily) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(58.dp).background(iconColor.copy(alpha = 0.12f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = iconColor, modifier = Modifier.size(24.dp))
-            }
-            Text(title, fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = c.TextPrimary)
-            Text(subtitle, fontFamily = body, fontSize = 13.sp, color = c.TextSecondary)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Box(
+                Modifier.size(110.dp).rotate(12f).block(fill, c.Ink, c.Shadow, BurstShape(12, 0.22f), 6.dp, 4.dp),
+                contentAlignment = Alignment.Center
+            ) { Icon(icon, null, tint = InkBlack, modifier = Modifier.size(36.dp).rotate(-12f)) }
+            Text(title.uppercase(), fontFamily = LocalDisplayFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, letterSpacing = 0.5.sp, color = c.TextPrimary)
+            Text(subtitle, fontFamily = body, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = c.TextSecondary)
         }
     }
 }
 
 @Composable
 private fun LabelChip(label: GitHubPRLabel, body: FontFamily) {
+    val c = LocalAppColors.current
     val base = parseHexColor(label.color)
-    Box(Modifier.background(base.copy(alpha = 0.16f), RoundedCornerShape(20.dp)).border(1.dp, base.copy(alpha = 0.35f), RoundedCornerShape(20.dp)).padding(horizontal = 9.dp, vertical = 3.dp)) {
-        Text(label.name, fontFamily = body, fontWeight = FontWeight.Medium, fontSize = 10.sp, color = base)
+    // Use the label's real GitHub color as a solid fill, with whichever ink reads on it.
+    val text = if (base.luminance() > 0.4f) InkBlack else Color.White
+    Box(
+        Modifier.rotate(if (label.name.length % 2 == 0) -2f else 2f)
+            .block(base, c.Ink, c.Shadow, RoundedCornerShape(8.dp), shadowOffset = 2.dp, borderWidth = 2.dp)
+            .padding(horizontal = 9.dp, vertical = 3.dp)
+    ) {
+        Text(label.name, fontFamily = body, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = text)
     }
 }
 

@@ -5,3 +5,38 @@ html, body {
     padding: 0;
     overflow: hidden;
 }
+
+body {
+    background-color: #FFF4D6;
+    background-image: radial-gradient(rgba(20, 7, 43, 0.16) 1.8px, transparent 1.8px);
+    background-size: 22px 22px;
+}
+
+.boot {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.boot span {
+    width: 24px;
+    height: 24px;
+    background: var(--c);
+    border: 3px solid #14072B;
+    border-radius: 6px;
+    box-shadow: 3px 3px 0 #14072B;
+    animation: bounce 1.1s var(--d) infinite ease-in-out;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50%      { transform: translateY(-28px) rotate(180deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .boot span { animation: none; }
+}

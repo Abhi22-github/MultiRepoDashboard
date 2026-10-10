@@ -29,6 +29,20 @@ val LocalDisplayFont = staticCompositionLocalOf<FontFamily> { FontFamily.Default
 /** Inter — body & dense UI. */
 val LocalBodyFont    = staticCompositionLocalOf<FontFamily> { FontFamily.Default }
 
+// ── Maximalist palette ─────────────────────────────────────────────
+// Loud, saturated brights. Everything except Grape/Cobalt is light enough to carry Ink text.
+val HotPink  = Color(0xFFFF2E88)
+val Sunshine = Color(0xFFFFD60A)
+val Cobalt   = Color(0xFF2D5BFF)
+val Lime     = Color(0xFFB6F500)
+val Tangerine = Color(0xFFFF6B1A)
+val Grape    = Color(0xFF8B3DFF)
+val Aqua     = Color(0xFF00D1B2)
+val Lavender = Color(0xFFC9A7FF)
+val Sky      = Color(0xFF7FB2FF)
+val Cream    = Color(0xFFFFF4D6)
+val InkBlack = Color(0xFF14072B)
+
 data class AppColorScheme(
     val Primary: Color,
     val PrimaryDark: Color,
@@ -57,68 +71,92 @@ data class AppColorScheme(
     val TextMuted: Color,
     val Border: Color,
     val Divider: Color,
+    /** Thick outlines around every block. */
+    val Ink: Color,
+    /** Solid offset "hard" shadow color. */
+    val Shadow: Color,
+    /** Text/icon color placed on top of any bright accent fill. */
+    val OnBright: Color,
+    /** Pattern ink drawn over backgrounds (dots, stripes). */
+    val Pattern: Color,
+    /** Rotating accent fills for cards, chips, stickers. */
+    val Accents: List<Color>,
     val isDark: Boolean
-)
+) {
+    fun accent(i: Int): Color = Accents[((i % Accents.size) + Accents.size) % Accents.size]
+}
+
+private val AccentCycle = listOf(HotPink, Sunshine, Aqua, Tangerine, Lime, Lavender, Sky)
 
 val LightColors = AppColorScheme(
-    Primary      = Color(0xFF2563EB),
-    PrimaryDark  = Color(0xFF1D4ED8),
-    PrimaryLight = Color(0xFFEFF6FF),
-    PrimaryMid   = Color(0xFFBFDBFE),
-    Success      = Color(0xFF1E8E3E),
-    SuccessLight = Color(0xFFE6F4EA),
-    Warning      = Color(0xFFE37400),
-    WarningLight = Color(0xFFFEF7E0),
-    Error        = Color(0xFFD93025),
-    ErrorLight   = Color(0xFFFCE8E6),
-    Info         = Color(0xFF7C3AED),
-    InfoLight    = Color(0xFFF3EEFE),
-    Sidebar          = Color(0xFFFFFFFF),
-    SidebarHover     = Color(0xFFF1F3F4),
-    SidebarActive    = Color(0xFFEFF6FF),
-    SidebarBorder    = Color(0xFFE8EAED),
-    SidebarText      = Color(0xFF3C4043),
-    SidebarTextMuted = Color(0xFF80868B),
-    Background     = Color(0xFFF6F8FA),
+    Primary      = HotPink,
+    PrimaryDark  = Color(0xFFD9006B),
+    PrimaryLight = Color(0xFFFFD1E6),
+    PrimaryMid   = Color(0xFFFF8CC0),
+    Success      = Color(0xFF00A86B),
+    SuccessLight = Lime,
+    Warning      = Tangerine,
+    WarningLight = Sunshine,
+    Error        = Color(0xFFE5001C),
+    ErrorLight   = Color(0xFFFFC2C9),
+    Info         = Grape,
+    InfoLight    = Color(0xFFE3D1FF),
+    Sidebar          = Color(0xFF2A0A5E),
+    SidebarHover     = Color(0xFF3F1885),
+    SidebarActive    = Sunshine,
+    SidebarBorder    = InkBlack,
+    SidebarText      = Cream,
+    SidebarTextMuted = Color(0xFFC9B6F2),
+    Background     = Cream,
     Surface        = Color(0xFFFFFFFF),
-    SurfaceVariant = Color(0xFFF1F3F4),
-    SurfaceHover   = Color(0xFFFBFCFD),
-    TextPrimary   = Color(0xFF1F2328),
-    TextSecondary = Color(0xFF5F6368),
-    TextMuted     = Color(0xFF9AA0A6),
-    Border  = Color(0xFFE1E4E8),
-    Divider = Color(0xFFEDEFF2),
+    SurfaceVariant = Color(0xFFFFE9A8),
+    SurfaceHover   = Color(0xFFFFF9E8),
+    TextPrimary   = InkBlack,
+    TextSecondary = Color(0xFF3B2A5C),
+    TextMuted     = Color(0xFF6E5F8A),
+    Border  = InkBlack,
+    Divider = InkBlack,
+    Ink      = InkBlack,
+    Shadow   = InkBlack,
+    OnBright = InkBlack,
+    Pattern  = Color(0x2914072B),
+    Accents  = AccentCycle,
     isDark = false
 )
 
 val DarkColors = AppColorScheme(
-    Primary      = Color(0xFF60A5FA),
-    PrimaryDark  = Color(0xFF93C5FD),
-    PrimaryLight = Color(0xFF17233A),
-    PrimaryMid   = Color(0xFF1E3A5F),
-    Success      = Color(0xFF81C995),
-    SuccessLight = Color(0xFF1E3A28),
-    Warning      = Color(0xFFFDD663),
-    WarningLight = Color(0xFF3D3016),
-    Error        = Color(0xFFF28B82),
-    ErrorLight   = Color(0xFF3B2320),
-    Info         = Color(0xFFC4B5FD),
-    InfoLight    = Color(0xFF2A2140),
-    Sidebar          = Color(0xFF1A1A1C),
-    SidebarHover     = Color(0xFF27272A),
-    SidebarActive    = Color(0xFF17233A),
-    SidebarBorder    = Color(0xFF2E2E31),
-    SidebarText      = Color(0xFFC4C7C5),
-    SidebarTextMuted = Color(0xFF80868B),
-    Background     = Color(0xFF0F0F10),
-    Surface        = Color(0xFF1C1C1E),
-    SurfaceVariant = Color(0xFF29292C),
-    SurfaceHover   = Color(0xFF242427),
-    TextPrimary   = Color(0xFFE6E6E8),
-    TextSecondary = Color(0xFF9AA0A6),
-    TextMuted     = Color(0xFF77797D),
-    Border  = Color(0xFF34343A),
-    Divider = Color(0xFF29292C),
+    Primary      = HotPink,
+    PrimaryDark  = Color(0xFFFF6BAA),
+    PrimaryLight = Color(0xFF4A0F33),
+    PrimaryMid   = Color(0xFF9C1D5C),
+    Success      = Lime,
+    SuccessLight = Lime,
+    Warning      = Sunshine,
+    WarningLight = Sunshine,
+    Error        = Color(0xFFFF5470),
+    ErrorLight   = Color(0xFF4A0F1C),
+    Info         = Color(0xFFB98CFF),
+    InfoLight    = Color(0xFF2E1660),
+    Sidebar          = Color(0xFF0B0219),
+    SidebarHover     = Color(0xFF241047),
+    SidebarActive    = Sunshine,
+    SidebarBorder    = Cream,
+    SidebarText      = Cream,
+    SidebarTextMuted = Color(0xFFA08CC9),
+    Background     = Color(0xFF16072F),
+    Surface        = Color(0xFF241047),
+    SurfaceVariant = Color(0xFF34195F),
+    SurfaceHover   = Color(0xFF2D1455),
+    TextPrimary   = Cream,
+    TextSecondary = Color(0xFFE2D4FF),
+    TextMuted     = Color(0xFFA08CC9),
+    Border  = Cream,
+    Divider = Color(0xFF5A3D8C),
+    Ink      = Cream,
+    Shadow   = HotPink,
+    OnBright = InkBlack,
+    Pattern  = Color(0x26FFF4D6),
+    Accents  = AccentCycle,
     isDark = true
 )
 
@@ -144,11 +182,11 @@ fun AppTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     val material = if (darkTheme) darkColorScheme(
         primary = colors.Primary, secondary = colors.Success, tertiary = colors.Warning,
         error = colors.Error, background = colors.Background, surface = colors.Surface,
-        onPrimary = Color(0xFF1F2328), onBackground = colors.TextPrimary, onSurface = colors.TextPrimary
+        onPrimary = InkBlack, onBackground = colors.TextPrimary, onSurface = colors.TextPrimary
     ) else lightColorScheme(
         primary = colors.Primary, secondary = colors.Success, tertiary = colors.Warning,
         error = colors.Error, background = colors.Background, surface = colors.Surface,
-        onPrimary = Color.White, onBackground = colors.TextPrimary, onSurface = colors.TextPrimary
+        onPrimary = InkBlack, onBackground = colors.TextPrimary, onSurface = colors.TextPrimary
     )
 
     CompositionLocalProvider(
@@ -159,18 +197,18 @@ fun AppTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
         MaterialTheme(
             colorScheme = material,
             typography = Typography(
-                headlineLarge  = TextStyle(fontFamily = display, fontWeight = FontWeight.Bold,     fontSize = 24.sp, lineHeight = 30.sp),
-                headlineMedium = TextStyle(fontFamily = display, fontWeight = FontWeight.Bold,     fontSize = 20.sp, lineHeight = 26.sp),
-                headlineSmall  = TextStyle(fontFamily = display, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 23.sp),
-                titleLarge     = TextStyle(fontFamily = display, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp),
-                titleMedium    = TextStyle(fontFamily = display, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp),
-                titleSmall     = TextStyle(fontFamily = body,    fontWeight = FontWeight.SemiBold, fontSize = 13.sp, lineHeight = 18.sp),
-                bodyLarge      = TextStyle(fontFamily = body,    fontWeight = FontWeight.Normal,   fontSize = 14.sp, lineHeight = 22.sp),
-                bodyMedium     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Normal,   fontSize = 13.sp, lineHeight = 20.sp),
-                bodySmall      = TextStyle(fontFamily = body,    fontWeight = FontWeight.Normal,   fontSize = 12.sp, lineHeight = 18.sp),
-                labelLarge     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,   fontSize = 12.sp, lineHeight = 16.sp),
-                labelMedium    = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,   fontSize = 11.sp, lineHeight = 15.sp),
-                labelSmall     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,   fontSize = 10.sp, lineHeight = 14.sp),
+                headlineLarge  = TextStyle(fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 40.sp, lineHeight = 44.sp),
+                headlineMedium = TextStyle(fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, lineHeight = 32.sp),
+                headlineSmall  = TextStyle(fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, lineHeight = 25.sp),
+                titleLarge     = TextStyle(fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, lineHeight = 22.sp),
+                titleMedium    = TextStyle(fontFamily = display, fontWeight = FontWeight.Bold,      fontSize = 15.sp, lineHeight = 20.sp),
+                titleSmall     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Bold,      fontSize = 13.sp, lineHeight = 18.sp),
+                bodyLarge      = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,    fontSize = 14.sp, lineHeight = 22.sp),
+                bodyMedium     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,    fontSize = 13.sp, lineHeight = 20.sp),
+                bodySmall      = TextStyle(fontFamily = body,    fontWeight = FontWeight.Medium,    fontSize = 12.sp, lineHeight = 18.sp),
+                labelLarge     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Bold,      fontSize = 12.sp, lineHeight = 16.sp),
+                labelMedium    = TextStyle(fontFamily = body,    fontWeight = FontWeight.Bold,      fontSize = 11.sp, lineHeight = 15.sp),
+                labelSmall     = TextStyle(fontFamily = body,    fontWeight = FontWeight.Bold,      fontSize = 10.sp, lineHeight = 14.sp),
             ),
             content = content
         )
