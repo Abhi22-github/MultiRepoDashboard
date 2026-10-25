@@ -1,8 +1,8 @@
-# PR//DASH — all your repos, loudly
+# RepoDashboard
 
 **Every pull request. One wall.**
 
-PR//DASH is a GitHub dashboard that puts open PRs, drafts and releases from all the repositories you care about on a single screen. Connect with a personal access token, choose your repos, and see what's waiting for review and what's ready to ship.
+RepoDashboard is a GitHub dashboard that puts open PRs, drafts and releases from all the repositories you care about on a single screen. Connect with a personal access token, choose your repos, and see what's waiting for review and what's ready to ship.
 
 It's built with **Kotlin Multiplatform + Compose Multiplatform**, so the same UI code runs as a **web app (Kotlin/Wasm)** and an **Android app**.
 
