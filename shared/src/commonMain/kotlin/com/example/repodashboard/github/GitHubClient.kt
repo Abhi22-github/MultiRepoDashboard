@@ -8,6 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
@@ -44,7 +45,7 @@ class GitHubClient(
                 else ->
                     "GitHub returned ${response.status.value} ${response.status.description}."
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Throwable) {
             "Could not reach GitHub (${e.message ?: "network or CORS error"})."
         }
     }
@@ -69,8 +70,8 @@ class GitHubClient(
         try {
             val response = gate.withPermit { client.get(url) { addHeaders(); params() } }
             if (response.status.isSuccess()) Result.success(response.body()) else Result.failure(errorOf(response, what))
-        } catch (e: Exception) {
-            Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
+        } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+            Result.failure(APIError("NETWORK_ERROR", "Network error calling $url: ${e.message}", null))
         }
 
     private fun repoUrl(owner: String, repo: String) = "$baseUrl/repos/$owner/$repo"
@@ -109,7 +110,7 @@ class GitHubClient(
                     parameter("per_page", 100)
                 }
                 if (resp.status.isSuccess()) resp.body() else emptyList()
-            } catch (e: Exception) {
+            } catch (e: CancellationException) { throw e } catch (e: Throwable) {
                 emptyList()
             }
 
@@ -133,7 +134,7 @@ class GitHubClient(
             }
 
             Result.success(byName.values.toList())
-        } catch (e: Exception) {
+        } catch (e: CancellationException) { throw e } catch (e: Throwable) {
             Result.failure(APIError("NETWORK_ERROR", "Failed to load repos: ${e.message}", null))
         }
     }
@@ -172,8 +173,8 @@ class GitHubClient(
                 }
                 if (response.status.isSuccess()) parse(response) else Result.failure(errorOf(response, "data"))
             }
-        } catch (e: Exception) {
-            Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
+        } catch (e: CancellationException) { throw e } catch (e: Throwable) {
+            Result.failure(APIError("NETWORK_ERROR", "Network error calling $graphqlUrl: ${e.message}", null))
         }
 
     fun close() = client.close()
