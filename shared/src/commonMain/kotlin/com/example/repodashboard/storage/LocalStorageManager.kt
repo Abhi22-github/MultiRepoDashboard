@@ -19,4 +19,6 @@ expect object LocalStorageManager {
     fun getPinned(): Set<String>
     fun saveApiBase(apiBase: String)
     fun getApiBase(): String?
+    fun saveListWidth(px: Int)
+    fun getListWidth(): Int?
 }

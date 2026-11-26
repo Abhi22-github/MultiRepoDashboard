@@ -5,6 +5,7 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
@@ -45,50 +46,37 @@ class GitHubClient(
         }
     }
 
-    suspend fun getLatestRelease(owner: String, repo: String): Result<GitHubRelease> {
-        return try {
-            val response = client.get("$baseUrl/repos/$owner/$repo/releases/latest") { addHeaders() }
-            when {
-                response.status == HttpStatusCode.NotFound ->
-                    Result.failure(APIError("NOT_FOUND", "No releases found", 404))
-                response.status == HttpStatusCode.Unauthorized ->
-                    Result.failure(APIError("INVALID_TOKEN", "GitHub token invalid or expired", 401))
-                response.status == HttpStatusCode.TooManyRequests ->
-                    Result.failure(APIError("RATE_LIMIT", "GitHub rate limit exceeded", 429))
-                response.status.isSuccess() ->
-                    Result.success(response.body())
-                else ->
-                    Result.failure(APIError("API_ERROR", "Failed to fetch release", response.status.value))
-            }
-        } catch (e: Exception) {
-            Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
+    /** Maps a non-success response to an [APIError] the UI can act on. */
+    private fun errorOf(response: HttpResponse, what: String): APIError {
+        val remaining = response.headers["x-ratelimit-remaining"]
+        val reset = response.headers["x-ratelimit-reset"]?.toLongOrNull()
+        return when {
+            response.status == HttpStatusCode.Unauthorized ->
+                APIError("INVALID_TOKEN", "GitHub token invalid or expired", 401)
+            response.status == HttpStatusCode.TooManyRequests ||
+                (response.status == HttpStatusCode.Forbidden && remaining == "0") ->
+                APIError("RATE_LIMIT", "GitHub rate limit reached", response.status.value, reset)
+            response.status == HttpStatusCode.NotFound ->
+                APIError("NOT_FOUND", "$what not found", 404)
+            else -> APIError("API_ERROR", "Failed to fetch $what", response.status.value)
         }
     }
 
-    suspend fun compareBranches(
-        owner: String,
-        repo: String,
-        base: String,
-        head: String
-    ): Result<GitHubCompareResponse> {
-        return try {
-            val response = client.get("$baseUrl/repos/$owner/$repo/compare/$base...$head") { addHeaders() }
-            when {
-                response.status == HttpStatusCode.NotFound ->
-                    Result.failure(APIError("NOT_FOUND", "Branches not found", 404))
-                response.status == HttpStatusCode.Unauthorized ->
-                    Result.failure(APIError("INVALID_TOKEN", "GitHub token invalid", 401))
-                response.status == HttpStatusCode.TooManyRequests ->
-                    Result.failure(APIError("RATE_LIMIT", "Rate limit exceeded", 429))
-                response.status.isSuccess() ->
-                    Result.success(response.body())
-                else ->
-                    Result.failure(APIError("API_ERROR", "Failed to compare branches", response.status.value))
-            }
+    private suspend inline fun <reified T> getJson(url: String, what: String, crossinline params: HttpRequestBuilder.() -> Unit = {}): Result<T> =
+        try {
+            val response = client.get(url) { addHeaders(); params() }
+            if (response.status.isSuccess()) Result.success(response.body()) else Result.failure(errorOf(response, what))
         } catch (e: Exception) {
             Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
         }
-    }
+
+    private fun repoUrl(owner: String, repo: String) = "$baseUrl/repos/$owner/$repo"
+
+    suspend fun getLatestRelease(owner: String, repo: String): Result<GitHubRelease> =
+        getJson("${repoUrl(owner, repo)}/releases/latest", "release")
+
+    suspend fun compareBranches(owner: String, repo: String, base: String, head: String): Result<GitHubCompareResponse> =
+        getJson("${repoUrl(owner, repo)}/compare/$base...$head", "comparison")
 
     suspend fun getUserRepos(): Result<List<GitHubRepoItem>> {
         return try {
@@ -151,43 +139,46 @@ class GitHubClient(
     }
 
     suspend fun getOpenPRs(owner: String, repo: String): Result<List<GitHubPR>> {
-        return try {
-            val all = mutableListOf<GitHubPR>()
-            var page = 1
-            while (true) {
-                val response = client.get("$baseUrl/repos/$owner/$repo/pulls") {
-                    addHeaders()
-                    parameter("state", "open")
-                    parameter("per_page", 100)
-                    parameter("page", page)
-                    parameter("sort", "updated")
-                    parameter("direction", "desc")
-                }
-                if (!response.status.isSuccess()) break
-                val batch: List<GitHubPR> = response.body()
-                if (batch.isEmpty()) break
-                all.addAll(batch)
-                if (batch.size < 100) break
-                page++
-            }
-            Result.success(all)
-        } catch (e: Exception) {
-            Result.failure(APIError("NETWORK_ERROR", e.message ?: "Failed to load PRs", null))
+        val all = mutableListOf<GitHubPR>()
+        var page = 1
+        while (true) {
+            val batch = getJson<List<GitHubPR>>("${repoUrl(owner, repo)}/pulls", "pull requests") {
+                parameter("state", "open")
+                parameter("per_page", 100)
+                parameter("page", page)
+                parameter("sort", "updated")
+                parameter("direction", "desc")
+            }.getOrElse { return Result.failure(it) }
+            all.addAll(batch)
+            if (batch.size < 100) break
+            page++
         }
+        return Result.success(all)
     }
 
-    suspend fun getReleases(owner: String, repo: String): Result<List<GitHubRelease>> {
-        return try {
-            val response = client.get("$baseUrl/repos/$owner/$repo/releases") {
-                addHeaders()
-                parameter("per_page", 100)
-            }
-            if (response.status.isSuccess()) Result.success(response.body())
-            else Result.failure(APIError("API_ERROR", "Failed to fetch releases", response.status.value))
-        } catch (e: Exception) {
-            Result.failure(APIError("NETWORK_ERROR", e.message ?: "Failed to load releases", null))
+    /** Recently closed PRs; callers keep the ones with merged_at set. */
+    suspend fun getClosedPRs(owner: String, repo: String, perPage: Int = 50): Result<List<GitHubPR>> =
+        getJson("${repoUrl(owner, repo)}/pulls", "pull requests") {
+            parameter("state", "closed")
+            parameter("per_page", perPage)
+            parameter("sort", "updated")
+            parameter("direction", "desc")
         }
-    }
+
+    suspend fun getReleases(owner: String, repo: String): Result<List<GitHubRelease>> =
+        getJson("${repoUrl(owner, repo)}/releases", "releases") { parameter("per_page", 100) }
+
+    suspend fun getPullFull(owner: String, repo: String, number: Int): Result<GitHubPRFull> =
+        getJson("${repoUrl(owner, repo)}/pulls/$number", "pull request")
+
+    suspend fun getReviews(owner: String, repo: String, number: Int): Result<List<GitHubReview>> =
+        getJson("${repoUrl(owner, repo)}/pulls/$number/reviews", "reviews") { parameter("per_page", 100) }
+
+    suspend fun getCheckRuns(owner: String, repo: String, sha: String): Result<GitHubCheckRuns> =
+        getJson("${repoUrl(owner, repo)}/commits/$sha/check-runs", "checks") { parameter("per_page", 100) }
+
+    suspend fun getCombinedStatus(owner: String, repo: String, sha: String): Result<GitHubCombinedStatus> =
+        getJson("${repoUrl(owner, repo)}/commits/$sha/status", "status")
 
     fun close() = client.close()
 }

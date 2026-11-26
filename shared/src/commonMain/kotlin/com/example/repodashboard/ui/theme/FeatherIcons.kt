@@ -167,4 +167,65 @@ object FeatherIcons {
         moveTo(3.27f, 6.96f); lineTo(12f, 12.01f); lineTo(20.73f, 6.96f)
         lineP(12f, 22.08f, 12f, 12f)
     }
+
+    val ListIcon: ImageVector = stroke("list") {
+        lineP(8f, 6f, 21f, 6f); lineP(8f, 12f, 21f, 12f); lineP(8f, 18f, 21f, 18f)
+        lineP(3.5f, 6f, 3.51f, 6f); lineP(3.5f, 12f, 3.51f, 12f); lineP(3.5f, 18f, 3.51f, 18f)
+    }
+
+    val Columns: ImageVector = stroke("columns") {
+        moveTo(3f, 4f); horizontalLineToRelative(5f); verticalLineToRelative(16f); horizontalLineToRelative(-5f); close()
+        moveTo(10f, 4f); horizontalLineToRelative(5f); verticalLineToRelative(11f); horizontalLineToRelative(-5f); close()
+        moveTo(17f, 4f); horizontalLineToRelative(4f); verticalLineToRelative(7f); horizontalLineToRelative(-4f); close()
+    }
+
+    val Copy: ImageVector = stroke("copy") {
+        rectP(9f, 9f, 13f, 13f)
+        moveTo(5f, 15f); horizontalLineTo(4f); arcToRelative(2f, 2f, 0f, false, true, -2f, -2f)
+        verticalLineTo(4f); arcToRelative(2f, 2f, 0f, false, true, 2f, -2f); horizontalLineToRelative(9f)
+        arcToRelative(2f, 2f, 0f, false, true, 2f, 2f); verticalLineToRelative(1f)
+    }
+
+    val Check: ImageVector = stroke("check") { moveTo(5f, 12.5f); lineTo(9.5f, 17f); lineTo(19f, 7.5f) }
+
+    val X: ImageVector = stroke("x") { lineP(18f, 6f, 6f, 18f); lineP(6f, 6f, 18f, 18f) }
+
+    val ArrowLeft: ImageVector = stroke("arrow-left") { lineP(19f, 12f, 5f, 12f); moveTo(11f, 18f); lineTo(5f, 12f); lineTo(11f, 6f) }
+    val ArrowRight: ImageVector = stroke("arrow-right") { lineP(5f, 12f, 19f, 12f); moveTo(13f, 6f); lineTo(19f, 12f); lineTo(13f, 18f) }
+
+    val Server: ImageVector = stroke("server") {
+        rectP(3f, 4f, 18f, 7f); rectP(3f, 13f, 18f, 7f)
+        lineP(7f, 7.5f, 7.01f, 7.5f); lineP(7f, 16.5f, 7.01f, 16.5f)
+    }
+
+    val Info: ImageVector = stroke("info") {
+        circleP(12f, 12f, 9f); lineP(12f, 8f, 12.01f, 8f); moveTo(11f, 12f); horizontalLineToRelative(1f); verticalLineToRelative(4f); horizontalLineToRelative(1f)
+    }
+
+    val AlertCircle: ImageVector = stroke("alert-circle") {
+        circleP(12f, 12f, 9f); lineP(12f, 8f, 12f, 13f); lineP(12f, 16f, 12.01f, 16f)
+    }
+
+    val WifiOff: ImageVector = stroke("wifi-off") {
+        lineP(2f, 2f, 22f, 22f)
+        moveTo(8.5f, 16.5f); arcToRelative(5f, 5f, 0f, false, true, 7f, 0f)
+        moveTo(5f, 12.9f); arcToRelative(10f, 10f, 0f, false, true, 5.2f, -2.7f)
+        moveTo(19f, 12.9f); arcToRelative(10f, 10f, 0f, false, false, -2.6f, -1.9f)
+        lineP(12f, 20f, 12.01f, 20f)
+    }
+
+    val Inbox: ImageVector = stroke("inbox") {
+        moveTo(22f, 12f); horizontalLineToRelative(-6f); lineToRelative(-2f, 3f); horizontalLineToRelative(-4f); lineToRelative(-2f, -3f); horizontalLineTo(2f)
+        moveTo(5.45f, 5.11f); lineTo(2f, 12f); verticalLineToRelative(6f); arcToRelative(2f, 2f, 0f, false, false, 2f, 2f)
+        horizontalLineToRelative(16f); arcToRelative(2f, 2f, 0f, false, false, 2f, -2f); verticalLineToRelative(-6f)
+        lineToRelative(-3.45f, -6.89f); arcTo(2f, 2f, 0f, false, false, 16.76f, 4f); horizontalLineTo(7.24f)
+        arcToRelative(2f, 2f, 0f, false, false, -1.79f, 1.11f); close()
+    }
+
+    val FileDashed: ImageVector = stroke("file-text") {
+        moveTo(14f, 3f); horizontalLineTo(7f); arcToRelative(2f, 2f, 0f, false, false, -2f, 2f); verticalLineToRelative(14f)
+        arcToRelative(2f, 2f, 0f, false, false, 2f, 2f); horizontalLineToRelative(10f); arcToRelative(2f, 2f, 0f, false, false, 2f, -2f); verticalLineTo(8f); close()
+        moveTo(14f, 3f); verticalLineToRelative(5f); horizontalLineToRelative(5f)
+        lineP(9f, 13f, 15f, 13f); lineP(9f, 17f, 13f, 17f)
+    }
 }

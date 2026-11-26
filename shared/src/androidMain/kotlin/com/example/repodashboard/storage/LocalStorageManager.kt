@@ -19,4 +19,6 @@ actual object LocalStorageManager {
     actual fun getPinned(): Set<String> = emptySet()
     actual fun saveApiBase(apiBase: String) {}
     actual fun getApiBase(): String? = null
+    actual fun saveListWidth(px: Int) {}
+    actual fun getListWidth(): Int? = null
 }

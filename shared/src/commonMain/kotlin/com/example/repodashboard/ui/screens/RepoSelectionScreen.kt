@@ -1,24 +1,15 @@
 package com.example.repodashboard.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,150 +17,109 @@ import com.example.repodashboard.github.GitHubClient
 import com.example.repodashboard.models.AppConfig
 import com.example.repodashboard.models.GitHubRepoItem
 import com.example.repodashboard.models.RepositoryConfig
+import com.example.repodashboard.ui.inbox.*
 import com.example.repodashboard.ui.theme.*
 
+/** "Choose repositories": pick which repos the inbox follows. */
 @Composable
 fun RepoSelectionScreen(
     client: GitHubClient,
     existingConfig: AppConfig,
     onSave: (AppConfig) -> Unit,
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
 ) {
-    val c       = LocalAppColors.current
-    val body    = LocalBodyFont.current
-    val display = LocalDisplayFont.current
-
-    var isLoading      by remember { mutableStateOf(true) }
-    var error          by remember { mutableStateOf<String?>(null) }
-    var availableRepos by remember { mutableStateOf<List<GitHubRepoItem>>(emptyList()) }
-    var searchQuery    by remember { mutableStateOf("") }
-    var selected       by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val t = LocalTokens.current
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var repos by remember { mutableStateOf<List<GitHubRepoItem>>(emptyList()) }
+    var query by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(existingConfig.repositories.map { "${it.owner}/${it.repo}" }.toSet()) }
 
     LaunchedEffect(Unit) {
-        existingConfig.repositories.forEach { selected = selected + "${it.owner}/${it.repo}" }
-        isLoading = true
         val result = client.getUserRepos()
-        isLoading = false
-        if (result.isSuccess) availableRepos = result.getOrNull()!!
-        else error = result.exceptionOrNull()?.message ?: "Failed to load repositories"
+        loading = false
+        result.onSuccess { repos = it }.onFailure { error = it.message ?: "Couldn't load your repositories." }
     }
 
-    val filtered = remember(availableRepos, searchQuery) {
-        if (searchQuery.isBlank()) availableRepos
-        else availableRepos.filter {
-            it.full_name.contains(searchQuery, true) || it.description?.contains(searchQuery, true) == true
+    val filtered = remember(repos, query) {
+        val q = query.trim()
+        if (q.isEmpty()) repos else repos.filter { it.full_name.contains(q, true) || it.description?.contains(q, true) == true }
+    }
+
+    fun save() {
+        val found = repos.filter { it.full_name in selected }.map {
+            RepositoryConfig(name = it.full_name, owner = it.owner.login, repo = it.name, description = it.description ?: "", defaultBranch = it.default_branch)
         }
+        // Keep previously chosen repos that weren't listed this time (e.g. still loading orgs).
+        val kept = existingConfig.repositories.filter { "${it.owner}/${it.repo}" in selected && found.none { f -> f.owner == it.owner && f.repo == it.repo } }
+        onSave(AppConfig(found + kept))
     }
 
-    Column(Modifier.fillMaxSize().background(c.Background).dots(c.Pattern, spacing = 22.dp, radius = 1.8.dp)) {
-        Column(
-            Modifier.fillMaxWidth().background(Grape)
-                .dots(Color.White.copy(alpha = 0.16f), spacing = 18.dp, radius = 2.dp)
-                .padding(start = 40.dp, end = 40.dp, top = 24.dp, bottom = 28.dp)
-        ) {
-            if (onBack != null) {
-                MaxButton("← Back", onBack, fill = Cream, compact = true)
-                Spacer(Modifier.height(18.dp))
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text("PICK YOUR REPOS", fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 44.sp, lineHeight = 48.sp, letterSpacing = (-0.5).sp, color = Cream)
-                        BurstBadge(selected.size, Sunshine, size = 52.dp, rotation = 10f)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Sticker("${selected.size} selected", Lime, rotation = -3f, fontSize = 11.sp)
-                        Sticker("${availableRepos.size} available", Aqua, rotation = 2f, fontSize = 11.sp)
+    Box(Modifier.fillMaxSize().background(t.bg).padding(8.dp), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.widthIn(max = 880.dp).fillMaxWidth().fillMaxHeight().softCard(RoundedCornerShape(14.dp))) {
+            Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = 24.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (onBack != null) {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(8.dp)).click(onClick = onBack).padding(vertical = 4.dp, horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Ico(FeatherIcons.ArrowLeft, 16.dp, t.ink2)
+                        Txt("Back to inbox", weight = FontWeight.Medium, color = t.ink2)
                     }
                 }
-                MaxButton(
-                    text = "Save & continue (${selected.size})",
-                    onClick = {
-                        val configs = availableRepos.filter { it.full_name in selected }.map {
-                            RepositoryConfig(name = it.full_name, owner = it.owner.login, repo = it.name, description = it.description ?: "", defaultBranch = it.default_branch)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Txt("Choose repositories", size = 24.sp, weight = FontWeight.Bold, letterSpacing = (-0.4).sp)
+                        Txt(if (loading) "Loading…" else "${selected.size} selected · ${repos.size} available", color = t.muted)
+                    }
+                    if (!loading) {
+                        if (selected.isNotEmpty()) PrimaryButton("Save and continue (${selected.size})", ::save, height = 44.dp)
+                        else DisabledButton("Pick at least one", height = 44.dp)
+                    }
+                }
+                Field(query, { query = it }, "Search repositories", Modifier.fillMaxWidth(), leading = FeatherIcons.Search, fontSize = 15.sp)
+            }
+            Box(Modifier.fillMaxWidth().height(1.dp).background(t.line2))
+
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                when {
+                    loading -> {
+                        items(listOf(0.35f, 0.45f, 0.30f, 0.40f, 0.28f, 0.38f)) { w ->
+                            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                Box(Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)).background(t.line2))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    SkelBar(w, 12.dp); SkelBar(0.6f, 10.dp, radius = 5.dp)
+                                }
+                            }
                         }
-                        onSave(AppConfig(configs))
-                    },
-                    enabled = selected.isNotEmpty(),
-                    fill = HotPink
-                )
-            }
-            Spacer(Modifier.height(22.dp))
-            MaxTextField(
-                value = searchQuery, onValueChange = { searchQuery = it },
-                placeholder = "Search repositories…",
-                leading = { Icon(FeatherIcons.Search, null, tint = c.Primary, modifier = Modifier.size(18.dp)) }
-            )
-        }
-        Box(Modifier.fillMaxWidth().height(4.dp).background(c.Ink))
-
-        when {
-            isLoading -> MaxLoader("Loading your repositories…")
-            error != null -> Box(Modifier.fillMaxSize().padding(40.dp), contentAlignment = Alignment.TopStart) {
-                MaxNotice(FeatherIcons.AlertTriangle, error!!, c.Error)
-            }
-            filtered.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    if (searchQuery.isBlank()) "NO REPOSITORIES FOUND." else "NO REPOS MATCH \"${searchQuery.uppercase()}\".",
-                    fontFamily = display, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.TextSecondary
-                )
-            }
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                contentPadding = PaddingValues(start = 40.dp, end = 48.dp, top = 24.dp, bottom = 40.dp)
-            ) {
-                itemsIndexed(filtered, key = { _, r -> r.full_name }) { i, repo ->
-                    val isSel = repo.full_name in selected
-                    RepoRow(repo, isSel, c.accent(i), c, body) {
-                        selected = if (isSel) selected - repo.full_name else selected + repo.full_name
+                        item { Txt("Loading your repositories from GitHub…", Modifier.padding(start = 16.dp, top = 8.dp, bottom = 16.dp), size = 13.sp, color = t.muted) }
+                    }
+                    error != null -> item {
+                        EmptyState(FeatherIcons.WifiOff, t.failSoft, t.fail, "Couldn't load your repositories", error ?: "")
+                    }
+                    filtered.isEmpty() -> item {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                            Txt(if (query.isBlank()) "No repositories found for this token." else "No repositories match \"${query.trim()}\".", color = t.muted)
+                        }
+                    }
+                    else -> items(filtered, key = { it.full_name }) { r ->
+                        val on = r.full_name in selected
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if (on) t.sel else t.pane)
+                                .click(role = Role.Checkbox) { selected = if (on) selected - r.full_name else selected + r.full_name }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            Box(Modifier.padding(top = 3.dp)) { CheckBox(on) }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Txt(r.full_name, weight = FontWeight.SemiBold, color = if (on) t.accentText else t.ink)
+                                Txt(r.description?.takeIf { it.isNotBlank() } ?: "No description", size = 13.sp, color = t.muted, maxLines = 2)
+                            }
+                            Txt(r.updated_at?.take(10) ?: "", size = 12.sp, color = t.muted, mono = true, maxLines = 1)
+                        }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun RepoRow(repo: GitHubRepoItem, isSelected: Boolean, accent: Color, c: AppColorScheme, body: FontFamily, onToggle: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val lift = rememberLift(interaction, hoverLift = 3.dp)
-    val checkRotation by animateFloatAsState(if (isSelected) -10f else 0f, spring(dampingRatio = 0.4f, stiffness = 500f))
-    val bg = when { isSelected -> accent; hovered -> c.SurfaceHover; else -> c.Surface }
-    val fg = if (isSelected) InkBlack else c.TextPrimary
-    val sub = if (isSelected) InkBlack.copy(alpha = 0.75f) else c.TextSecondary
-
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .offset(-lift, -lift)
-            .block(bg, c.Ink, c.Shadow, RoundedCornerShape(16.dp), shadowOffset = (if (isSelected) 6.dp else 4.dp) + lift, borderWidth = 3.dp)
-            .then(if (isSelected) Modifier.stripes(Color.White.copy(alpha = 0.2f), gap = 22.dp, width = 8.dp) else Modifier)
-            .hoverable(interaction).clickable(interactionSource = interaction, indication = null) { onToggle() }
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Box(
-            modifier = Modifier.size(28.dp).rotate(checkRotation)
-                .block(if (isSelected) Cream else c.SurfaceVariant, c.Ink, c.Shadow, RoundedCornerShape(8.dp), shadowOffset = 2.dp, borderWidth = 3.dp),
-            contentAlignment = Alignment.Center
-        ) { if (isSelected) Text("✓", fontSize = 16.sp, color = InkBlack, fontWeight = FontWeight.ExtraBold) }
-
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(repo.full_name, fontFamily = LocalDisplayFont.current, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = fg)
-                if (repo.isPrivate) Sticker("private", if (isSelected) Cream else Lavender, rotation = -4f, fontSize = 9.sp, icon = FeatherIcons.Lock)
-            }
-            if (!repo.description.isNullOrBlank()) {
-                Text(repo.description, fontFamily = body, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = sub, maxLines = 1)
-            }
-        }
-        if (repo.updated_at != null) {
-            Box(
-                Modifier.background(if (isSelected) Cream else c.SurfaceVariant, RoundedCornerShape(50))
-                    .border(2.dp, if (isSelected) InkBlack else c.Ink, RoundedCornerShape(50))
-                    .padding(horizontal = 9.dp, vertical = 3.dp)
-            ) { Text(repo.updated_at.take(10), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = if (isSelected) InkBlack else c.TextPrimary) }
         }
     }
 }

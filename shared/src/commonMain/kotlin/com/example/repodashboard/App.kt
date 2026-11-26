@@ -1,138 +1,135 @@
 package com.example.repodashboard
 
 import androidx.compose.runtime.*
+import com.example.repodashboard.data.InboxData
+import com.example.repodashboard.data.loadInbox
 import com.example.repodashboard.github.GitHubClient
-import com.example.repodashboard.models.*
+import com.example.repodashboard.models.AppConfig
 import com.example.repodashboard.storage.LocalStorageManager
-import com.example.repodashboard.ui.screens.DashboardScreen
+import com.example.repodashboard.ui.inbox.InboxScreen
 import com.example.repodashboard.ui.screens.RepoSelectionScreen
 import com.example.repodashboard.ui.screens.TokenInputScreen
 import com.example.repodashboard.ui.theme.AppTheme
 import kotlinx.coroutines.launch
+
+private enum class Screen { Connect, Repos, Inbox }
 
 @Composable
 fun App() {
     var darkMode by remember { mutableStateOf(LocalStorageManager.getDarkMode()) }
     var pinned by remember { mutableStateOf(LocalStorageManager.getPinned()) }
     AppTheme(darkTheme = darkMode) {
-        var appState by remember { mutableStateOf(AppState()) }
-        var savedConfig by remember { mutableStateOf<AppConfig?>(null) }
-        var gitHubClient by remember { mutableStateOf<GitHubClient?>(null) }
-        var isValidatingToken by remember { mutableStateOf(false) }
-
+        var screen by remember { mutableStateOf(if (LocalStorageManager.getToken() != null) Screen.Inbox else Screen.Connect) }
+        var client by remember { mutableStateOf<GitHubClient?>(null) }
+        var apiBase by remember { mutableStateOf(LocalStorageManager.getApiBase() ?: "https://api.github.com") }
+        var config by remember { mutableStateOf(LocalStorageManager.getAppConfig()) }
+        var inbox by remember { mutableStateOf<InboxData?>(null) }
+        var loading by remember { mutableStateOf(false) }
+        var validating by remember { mutableStateOf(false) }
+        var connectError by remember { mutableStateOf<String?>(null) }
         val scope = rememberCoroutineScope()
 
-        LaunchedEffect(Unit) {
-            val token = LocalStorageManager.getToken() ?: return@LaunchedEffect
-            val apiBase = LocalStorageManager.getApiBase() ?: "https://api.github.com"
-            val client = GitHubClient(token, apiBase)
-            if (client.validateToken() == null) {
-                gitHubClient = client
-                appState = appState.copy(githubToken = token)
-                val config = LocalStorageManager.getAppConfig()
-                if (config == null || config.repositories.isEmpty()) {
-                    appState = appState.copy(showRepoSelection = true)
-                } else {
-                    savedConfig = config
-                    loadRepositories(appState, config, client) { appState = it }
-                }
-            } else {
-                LocalStorageManager.clearToken()
-                client.close()
+        fun refresh() {
+            val c = client ?: return
+            val cfg = config ?: return
+            if (loading) return
+            scope.launch {
+                loading = true
+                val fresh = loadInbox(c, cfg, apiBase)
+                // On a failed sync keep the last good data and show the problem on top of it.
+                val prev = inbox
+                inbox = if (fresh.problem != null && fresh.repos.isEmpty() && prev != null && prev.repos.isNotEmpty())
+                    prev.copy(problem = fresh.problem, rateResetAt = fresh.rateResetAt)
+                else fresh
+                loading = false
             }
         }
 
-        when {
-            appState.githubToken == null -> {
-                TokenInputScreen(
-                    isLoading = isValidatingToken,
-                    error = appState.error,
-                    onTokenSaved = { token, host ->
-                        scope.launch {
-                            isValidatingToken = true
-                            appState = appState.copy(error = null)
-                            val apiBase = normalizeApiBase(host)
-                            val client = GitHubClient(token, apiBase)
-                            val validationError = client.validateToken()
-                            if (validationError == null) {
-                                LocalStorageManager.saveToken(token)
-                                LocalStorageManager.saveApiBase(apiBase)
-                                gitHubClient = client
-                                appState = appState.copy(githubToken = token)
-                                val config = LocalStorageManager.getAppConfig()
-                                if (config == null || config.repositories.isEmpty()) {
-                                    appState = appState.copy(showRepoSelection = true)
-                                } else {
-                                    savedConfig = config
-                                    loadRepositories(appState.copy(githubToken = token), config, client) { appState = it }
-                                }
-                            } else {
-                                client.close()
-                                appState = appState.copy(error = validationError)
-                            }
-                            isValidatingToken = false
-                        }
-                    }
-                )
-            }
+        fun openInbox(c: GitHubClient) {
+            client = c
+            if (config?.repositories.isNullOrEmpty()) screen = Screen.Repos
+            else { screen = Screen.Inbox; inbox = null; refresh() }
+        }
 
-            appState.showRepoSelection -> {
+        fun signOut() {
+            LocalStorageManager.clearToken()
+            client?.close()
+            client = null
+            inbox = null
+            connectError = null
+            screen = Screen.Connect
+        }
+
+        // Restore a saved session. A token that no longer works sends the user back to Connect.
+        LaunchedEffect(Unit) {
+            val token = LocalStorageManager.getToken() ?: return@LaunchedEffect
+            val c = GitHubClient(token, apiBase)
+            loading = true
+            val err = c.validateToken()
+            loading = false
+            if (err == null) openInbox(c) else { c.close(); LocalStorageManager.clearToken(); connectError = err; screen = Screen.Connect }
+        }
+
+        when (screen) {
+            Screen.Connect -> TokenInputScreen(
+                isLoading = validating,
+                error = connectError,
+                onTokenSaved = { token, host ->
+                    scope.launch {
+                        validating = true
+                        connectError = null
+                        val base = normalizeApiBase(host)
+                        val c = GitHubClient(token, base)
+                        val err = c.validateToken()
+                        if (err == null) {
+                            LocalStorageManager.saveToken(token)
+                            LocalStorageManager.saveApiBase(base)
+                            apiBase = base
+                            openInbox(c)
+                        } else {
+                            c.close()
+                            connectError = err
+                        }
+                        validating = false
+                    }
+                }
+            )
+
+            Screen.Repos -> client?.let { c ->
                 RepoSelectionScreen(
-                    client = gitHubClient!!,
-                    existingConfig = savedConfig ?: AppConfig(emptyList()),
+                    client = c,
+                    existingConfig = config ?: AppConfig(emptyList()),
                     onSave = { newConfig ->
                         LocalStorageManager.saveAppConfig(newConfig)
-                        savedConfig = newConfig
-                        appState = appState.copy(showRepoSelection = false)
-                        scope.launch {
-                            loadRepositories(
-                                appState.copy(showRepoSelection = false),
-                                newConfig,
-                                gitHubClient!!
-                            ) { appState = it }
-                        }
+                        config = newConfig
+                        screen = Screen.Inbox
+                        inbox = null
+                        refresh()
                     },
-                    onBack = if (savedConfig?.repositories?.isNotEmpty() == true) {
-                        { appState = appState.copy(showRepoSelection = false) }
-                    } else null
+                    onBack = if (config?.repositories?.isNotEmpty() == true) ({ screen = Screen.Inbox }) else null
                 )
             }
 
-            else -> {
-                DashboardScreen(
-                    state = appState,
-                    client = gitHubClient,
-                    pinned = pinned,
-                    onTogglePin = { name ->
-                        pinned = if (name in pinned) pinned - name else pinned + name
-                        LocalStorageManager.savePinned(pinned)
-                    },
-                    onRefresh = {
-                        scope.launch {
-                            val client = gitHubClient
-                            val config = savedConfig
-                            if (client != null && config != null) {
-                                loadRepositories(appState, config, client) { appState = it }
-                            }
-                        }
-                    },
-                    onRepoSelected = { repoName -> appState = appState.copy(selectedRepoName = repoName) },
-                    onDashboardSelected = { appState = appState.copy(selectedRepoName = null) },
-                    onManageRepos = { appState = appState.copy(showRepoSelection = true) },
-                    onClearToken = {
-                        LocalStorageManager.clearToken()
-                        gitHubClient?.close()
-                        gitHubClient = null
-                        savedConfig = null
-                        appState = AppState()
-                    },
-                    isDark = darkMode,
-                    onToggleTheme = {
-                        darkMode = !darkMode
-                        LocalStorageManager.saveDarkMode(darkMode)
-                    }
-                )
-            }
+            Screen.Inbox -> InboxScreen(
+                data = inbox,
+                loading = loading || client == null,
+                noRepos = client != null && config?.repositories.isNullOrEmpty(),
+                client = client,
+                apiBase = apiBase,
+                pinned = pinned,
+                onTogglePin = { name ->
+                    pinned = if (name in pinned) pinned - name else pinned + name
+                    LocalStorageManager.savePinned(pinned)
+                },
+                onRefresh = ::refresh,
+                onManageRepos = { if (client != null) screen = Screen.Repos },
+                onSignOut = ::signOut,
+                isDark = darkMode,
+                onToggleTheme = {
+                    darkMode = !darkMode
+                    LocalStorageManager.saveDarkMode(darkMode)
+                }
+            )
         }
     }
 }
@@ -151,35 +148,4 @@ private fun normalizeApiBase(input: String): String {
         s.endsWith(".ghe.com") -> if (s.startsWith("api.")) "https://$s" else "https://api.$s"
         else -> "https://$s/api/v3"
     }
-}
-
-private suspend fun loadRepositories(
-    currentState: AppState,
-    config: AppConfig,
-    client: GitHubClient,
-    updateState: (AppState) -> Unit
-) {
-    val state = currentState.copy(isLoading = true, error = null)
-    updateState(state)
-
-    val repos = mutableListOf<Repository>()
-    for (repoConfig in config.repositories) {
-        val openPRs = client.getOpenPRs(repoConfig.owner, repoConfig.repo).getOrElse { emptyList() }
-        val version = client.getLatestRelease(repoConfig.owner, repoConfig.repo)
-            .getOrNull()?.tag_name?.removePrefix("v") ?: ""
-        repos.add(
-            Repository(
-                name = repoConfig.name,
-                owner = repoConfig.owner,
-                repo = repoConfig.repo,
-                description = repoConfig.description,
-                version = version,
-                defaultBranch = repoConfig.defaultBranch,
-                openPRsCount = openPRs.size,
-                openPRs = openPRs
-            )
-        )
-    }
-
-    updateState(state.copy(isLoading = false, repositories = repos))
 }

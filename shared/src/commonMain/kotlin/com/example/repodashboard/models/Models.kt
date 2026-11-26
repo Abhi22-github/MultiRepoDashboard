@@ -29,6 +29,12 @@ data class GitHubPRUser(val login: String)
 data class GitHubPRLabel(val name: String, val color: String = "")
 
 @Serializable
+data class GitHubRef(val ref: String = "", val sha: String = "")
+
+@Serializable
+data class GitHubMilestone(val title: String = "")
+
+@Serializable
 data class GitHubPR(
     val number: Int,
     val title: String,
@@ -37,10 +43,35 @@ data class GitHubPR(
     val draft: Boolean = false,
     val created_at: String = "",
     val updated_at: String = "",
+    val merged_at: String? = null,
     val html_url: String = "",
     val body: String? = null,
-    val labels: List<GitHubPRLabel> = emptyList()
+    val labels: List<GitHubPRLabel> = emptyList(),
+    val head: GitHubRef = GitHubRef(),
+    val base: GitHubRef = GitHubRef(),
+    val milestone: GitHubMilestone? = null
 )
+
+/** Fields only returned by GET /pulls/{n}. */
+@Serializable
+data class GitHubPRFull(
+    val additions: Int = 0,
+    val deletions: Int = 0,
+    val comments: Int = 0,
+    val review_comments: Int = 0
+)
+
+@Serializable
+data class GitHubReview(val state: String = "", val user: GitHubPRUser? = null)
+
+@Serializable
+data class GitHubCheckRun(val status: String = "", val conclusion: String? = null)
+
+@Serializable
+data class GitHubCheckRuns(val total_count: Int = 0, val check_runs: List<GitHubCheckRun> = emptyList())
+
+@Serializable
+data class GitHubCombinedStatus(val state: String = "", val total_count: Int = 0)
 
 @Serializable
 data class GitHubRepoItem(
@@ -93,32 +124,6 @@ data class GitHubAuthor(
 )
 
 @Serializable
-data class Repository(
-    val name: String,
-    val owner: String,
-    val repo: String,
-    val description: String = "",
-    val version: String = "",
-    val defaultBranch: String = "main",
-    val openPRsCount: Int = 0,
-    val openPRs: List<GitHubPR> = emptyList()
-)
-
-/** Loaded lazily when the Releases tab is opened. */
-data class ReleaseInfo(
-    val tagName: String,
-    val name: String,
-    val publishedAt: String,
-    val htmlUrl: String,
-    val prs: List<MergedPR>
-)
-
-data class ReleaseData(
-    val unreleased: List<MergedPR>,
-    val releases: List<ReleaseInfo>
-)
-
-@Serializable
 data class MergedPR(
     val id: String,
     val number: Int = 0,
@@ -143,19 +148,10 @@ data class ReleasePlans(
     val plans: Map<String, ReleasePlan> = emptyMap()
 )
 
-data class AppState(
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val repositories: List<Repository> = emptyList(),
-    val selectedRepoName: String? = null,
-    val releasePlans: Map<String, ReleasePlan> = emptyMap(),
-    val githubToken: String? = null,
-    val lastUpdated: String? = null,
-    val showRepoSelection: Boolean = false
-)
-
 data class APIError(
     val code: String,
     override val message: String,
-    val statusCode: Int? = null
+    val statusCode: Int? = null,
+    /** Epoch seconds when the rate limit resets (RATE_LIMIT only). */
+    val resetAt: Long? = null
 ) : Throwable(message)

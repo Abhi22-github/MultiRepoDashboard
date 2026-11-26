@@ -14,6 +14,7 @@ private const val CONFIG_KEY = "release-tool:app-config"
 private const val THEME_KEY = "release-tool:dark-mode"
 private const val PINNED_KEY = "release-tool:pinned"
 private const val API_BASE_KEY = "release-tool:api-base"
+private const val LIST_W_KEY = "release-tool:list-width"
 
 actual object LocalStorageManager {
     actual fun saveToken(token: String) {
@@ -70,4 +71,10 @@ actual object LocalStorageManager {
     }
 
     actual fun getApiBase(): String? = localStorage.getItem(API_BASE_KEY)
+
+    actual fun saveListWidth(px: Int) {
+        localStorage.setItem(LIST_W_KEY, px.toString())
+    }
+
+    actual fun getListWidth(): Int? = localStorage.getItem(LIST_W_KEY)?.toIntOrNull()
 }
