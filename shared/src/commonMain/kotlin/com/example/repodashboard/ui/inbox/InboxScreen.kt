@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 enum class Layout { List, Board }
 
 /** UI state of the inbox, plus caches for data loaded on demand. */
-class InboxState(private val scope: CoroutineScope, private val client: () -> GitHubClient?, private val webBase: String) {
+class InboxState(private val scope: CoroutineScope, private val client: () -> GitHubClient?, private val webBase: String, private val mode: () -> ApiMode) {
     var view by mutableStateOf(InboxView.Ship)
     var layout by mutableStateOf(Layout.List)
     /** Repo full name the inbox is scoped to; null = all repositories. */
@@ -49,7 +49,24 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
     /** Cards shown per board column; grows by [BOARD_PAGE]. */
     var boardLimit by mutableStateOf<Map<InboxView, Int>>(emptyMap())
 
-    fun detailOf(item: Item): PrDetail? = item.pr?.let { item.repo.details[it.number] }
+    /** Draft details, loaded one at a time when a draft is opened. */
+    private val draftDetails = mutableStateMapOf<String, PrDetail>()
+    private val requestedDrafts = mutableSetOf<String>()
+
+    fun detailOf(item: Item): PrDetail? = item.pr?.let { item.repo.details[it.number] ?: draftDetails[prKey(item.repo, it)] }
+
+    fun requestDetail(item: Item) {
+        val pr = item.pr ?: return
+        if (item.repo.details.containsKey(pr.number)) return
+        val key = prKey(item.repo, pr)
+        if (!requestedDrafts.add(key)) return
+        val c = client() ?: return
+        scope.launch {
+            val d = if (mode() == ApiMode.Rest) loadPrDetailRest(c, item.repo.owner, item.repo.name, pr).getOrNull()
+            else Triple(item.repo.owner, item.repo.name, pr.number).let { t -> loadPrDetails(c, listOf(t)).first[t] }
+            if (d != null) draftDetails[key] = d else requestedDrafts.remove(key)
+        }
+    }
 
     val releasePrs = mutableStateMapOf<String, List<ShipItem>>()
     private val requestedReleases = mutableSetOf<String>()
@@ -66,7 +83,7 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
 
     /** Drop on-demand release lists after a refresh. */
     fun clearCaches() {
-        releasePrs.clear(); requestedReleases.clear()
+        releasePrs.clear(); requestedReleases.clear(); draftDetails.clear(); requestedDrafts.clear()
     }
 
     fun pickView(v: InboxView) { view = v; layout = Layout.List; selKey = null; openFilter = null }
@@ -87,11 +104,16 @@ fun InboxScreen(
     onSignOut: () -> Unit,
     isDark: Boolean,
     onToggleTheme: () -> Unit,
+    apiMode: ApiMode,
+    onApiMode: (ApiMode) -> Unit,
+    rate: com.example.repodashboard.models.RateLimitResponse?,
+    onLoadRate: () -> Unit,
 ) {
     val t = LocalTokens.current
     val coroutineScope = rememberCoroutineScope()
     val clientRef = rememberUpdatedState(client)
-    val state = remember(apiBase) { InboxState(coroutineScope, { clientRef.value }, webBaseOf(apiBase)) }
+    val modeRef = rememberUpdatedState(apiMode)
+    val state = remember(apiBase) { InboxState(coroutineScope, { clientRef.value }, webBaseOf(apiBase), { modeRef.value }) }
 
     // Re-read older release lists after every sync.
     LaunchedEffect(data?.syncedAt) { if (data?.syncedAt != null) state.clearCaches() }
@@ -126,7 +148,9 @@ fun InboxScreen(
     )
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
-        TopBar(state, counts, ready, synced, isDark, onRefresh, onToggleTheme, onManageRepos, onSignOut)
+        TopBar(state, counts, ready, synced, isDark, onRefresh, onToggleTheme, onManageRepos, onSignOut) {
+            DevToolsButton(apiMode, onApiMode, rate, onLoadRate, allRepos)
+        }
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val wide = maxWidth >= 1100.dp
             Row(Modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -168,6 +192,7 @@ class InboxContext(
 private fun TopBar(
     state: InboxState, counts: Map<InboxView, Int>, ready: Boolean, synced: String, isDark: Boolean,
     onRefresh: () -> Unit, onToggleTheme: () -> Unit, onManageRepos: () -> Unit, onSignOut: () -> Unit,
+    devTools: @Composable () -> Unit,
 ) {
     val t = LocalTokens.current
     Column(Modifier.fillMaxWidth().background(t.pane)) {
@@ -194,6 +219,7 @@ private fun TopBar(
                     LayoutToggle("Board", FeatherIcons.Columns, state.layout == Layout.Board) { state.layout = Layout.Board; state.openFilter = null }
                 }
                 Txt(synced, Modifier.padding(start = 18.dp, end = 10.dp), size = 12.sp, color = t.muted, maxLines = 1)
+                devTools()
                 IconBtn(FeatherIcons.RefreshCw, "Refresh from GitHub", onRefresh)
                 IconBtn(if (isDark) FeatherIcons.Sun else FeatherIcons.Moon, if (isDark) "Switch to light mode" else "Switch to dark mode", onToggleTheme)
                 IconBtn(FeatherIcons.Sliders, "Manage repositories", onManageRepos)

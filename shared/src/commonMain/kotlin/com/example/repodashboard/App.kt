@@ -1,10 +1,10 @@
 package com.example.repodashboard
 
 import androidx.compose.runtime.*
-import com.example.repodashboard.data.InboxData
-import com.example.repodashboard.data.loadInbox
+import com.example.repodashboard.data.*
 import com.example.repodashboard.github.GitHubClient
 import com.example.repodashboard.models.AppConfig
+import com.example.repodashboard.models.RateLimitResponse
 import com.example.repodashboard.storage.LocalStorageManager
 import com.example.repodashboard.ui.inbox.InboxScreen
 import com.example.repodashboard.ui.screens.RepoSelectionScreen
@@ -27,7 +27,14 @@ fun App() {
         var loading by remember { mutableStateOf(false) }
         var validating by remember { mutableStateOf(false) }
         var connectError by remember { mutableStateOf<String?>(null) }
+        var apiMode by remember { mutableStateOf(LocalStorageManager.getApiMode()?.let { m -> ApiMode.entries.firstOrNull { it.name == m } } ?: ApiMode.Rest) }
+        var rate by remember { mutableStateOf<RateLimitResponse?>(null) }
+
         val scope = rememberCoroutineScope()
+        fun loadRate() {
+            val c = client ?: return
+            scope.launch { c.getRateLimit().onSuccess { rate = it } }
+        }
 
         fun refresh() {
             val c = client ?: return
@@ -35,24 +42,33 @@ fun App() {
             if (loading) return
             scope.launch {
                 loading = true
-                val fresh = loadInbox(c, cfg, apiBase)
+                val fresh = loadInbox(c, cfg, apiBase, apiMode)
+                if (fresh.problem == null) LocalStorageManager.saveInboxCache(encodeInboxCache(fresh, cfg, apiBase))
                 // On a failed sync keep the last good data and show the problem on top of it.
                 val prev = inbox
                 inbox = if (fresh.problem != null && fresh.repos.isEmpty() && prev != null && prev.repos.isNotEmpty())
                     prev.copy(problem = fresh.problem, rateResetAt = fresh.rateResetAt)
                 else fresh
                 loading = false
+                c.getRateLimit().onSuccess { rate = it }
             }
         }
 
         fun openInbox(c: GitHubClient) {
             client = c
-            if (config?.repositories.isNullOrEmpty()) screen = Screen.Repos
-            else { screen = Screen.Inbox; inbox = null; refresh() }
+            val cfg = config
+            if (cfg == null || cfg.repositories.isEmpty()) { screen = Screen.Repos; return }
+            screen = Screen.Inbox
+            // Show the last load straight away; only hit GitHub if it's stale.
+            val cached = decodeInboxCache(LocalStorageManager.getInboxCache(), cfg, apiBase)
+            inbox = cached
+            val age = cached?.syncedAt?.let { nowMs() - it }
+            if (age == null || age > CACHE_FRESH_MS) refresh()
         }
 
         fun signOut() {
             LocalStorageManager.clearToken()
+            LocalStorageManager.saveInboxCache(null)
             client?.close()
             client = null
             inbox = null
@@ -128,7 +144,15 @@ fun App() {
                 onToggleTheme = {
                     darkMode = !darkMode
                     LocalStorageManager.saveDarkMode(darkMode)
-                }
+                },
+                apiMode = apiMode,
+                onApiMode = { m ->
+                    apiMode = m
+                    LocalStorageManager.saveApiMode(m.name)
+                    refresh()
+                },
+                rate = rate,
+                onLoadRate = ::loadRate,
             )
         }
     }

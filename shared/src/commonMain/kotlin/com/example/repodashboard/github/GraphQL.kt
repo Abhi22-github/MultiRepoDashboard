@@ -51,6 +51,17 @@ data class GqlCommitNode(val commit: GqlRollupCommit = GqlRollupCommit())
 data class GqlCommits(val nodes: List<GqlCommitNode> = emptyList())
 
 @Serializable
+data class GqlPrDetail(
+    val number: Int = 0,
+    val additions: Int = 0,
+    val deletions: Int = 0,
+    val totalCommentsCount: Int = 0,
+    val reviewDecision: String? = null,
+    val latestReviews: GqlReviews? = null,
+    val commits: GqlCommits? = null,
+)
+
+@Serializable
 data class GqlPr(
     val number: Int,
     val title: String,
@@ -93,31 +104,81 @@ data class ReleaseConnection(val pageInfo: PageInfo = PageInfo(), val nodes: Lis
 @Serializable
 data class ReleasesRepo(val releases: ReleaseConnection = ReleaseConnection())
 
+/** First page of everything for one repo, in one query. */
+@Serializable
+data class FirstPageRepo(
+    val defaultBranchRef: GqlName? = null,
+    val open: PrConnection = PrConnection(),
+    val merged: PrConnection = PrConnection(),
+    val releases: ReleaseConnection = ReleaseConnection(),
+)
+
 object Queries {
     private const val PR_FIELDS = """
         number title url isDraft createdAt updatedAt mergedAt
         author { login } headRefName baseRefName
         milestone { title }
-        labels(first: 20) { nodes { name color } }
+        labels(first: 10) { nodes { name color } }
     """
 
-    /** Open PRs (drafts included) with everything the detail pane shows. */
+    /**
+     * First page of open PRs, merged PRs and releases for one repo. Sizes are picked so the query costs 1 point:
+     * cost ~ (3 connections + 50 + 40 label lookups) / 100.
+     */
+    const val FIRST_PAGE = """
+        query(${'$'}owner: String!, ${'$'}name: String!) {
+          repository(owner: ${'$'}owner, name: ${'$'}name) {
+            defaultBranchRef { name }
+            open: pullRequests(states: OPEN, first: 50, orderBy: { field: UPDATED_AT, direction: DESC }) {
+              pageInfo { hasNextPage endCursor }
+              nodes { $PR_FIELDS }
+            }
+            merged: pullRequests(states: MERGED, first: 40, orderBy: { field: UPDATED_AT, direction: DESC }) {
+              pageInfo { hasNextPage endCursor }
+              nodes { $PR_FIELDS }
+            }
+            releases(first: 100, orderBy: { field: CREATED_AT, direction: DESC }) {
+              pageInfo { hasNextPage endCursor }
+              nodes { tagName name url publishedAt isDraft }
+            }
+          }
+        }
+    """
+
+    /** Open PRs (drafts included), list fields only. Checks/reviews come from [prDetails]. */
     const val OPEN_PRS = """
         query(${'$'}owner: String!, ${'$'}name: String!, ${'$'}after: String) {
           repository(owner: ${'$'}owner, name: ${'$'}name) {
             defaultBranchRef { name }
             pullRequests(states: OPEN, first: 100, after: ${'$'}after, orderBy: { field: UPDATED_AT, direction: DESC }) {
               pageInfo { hasNextPage endCursor }
-              nodes {
-                $PR_FIELDS
-                additions deletions totalCommentsCount reviewDecision
-                latestReviews(first: 20) { nodes { state } }
-                commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-              }
+              nodes { $PR_FIELDS }
             }
           }
         }
     """
+
+    private const val DETAIL_FIELDS = """
+        number additions deletions totalCommentsCount reviewDecision
+        latestReviews(first: 10) { nodes { state } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    """
+
+    /**
+     * Checks, reviews and sizes for PRs across repos in one query: one aliased repository per repo,
+     * one aliased pullRequest per PR. Keep the total small (<= 25 PRs).
+     */
+    fun prDetails(targets: List<Triple<String, String, Int>>): String = buildString {
+        append("query {")
+        targets.groupBy { it.first to it.second }.entries.forEachIndexed { i, (repo, prs) ->
+            append(" r$i: repository(owner: ${quote(repo.first)}, name: ${quote(repo.second)}) {")
+            prs.forEach { append(" p${it.third}: pullRequest(number: ${it.third}) { $DETAIL_FIELDS }") }
+            append(" }")
+        }
+        append(" }")
+    }
+
+    private fun quote(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
     /** Merged PRs, most recently updated first; used for Unreleased and recent release contents. */
     const val MERGED_PRS = """

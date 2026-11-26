@@ -21,4 +21,9 @@ expect object LocalStorageManager {
     fun getApiBase(): String?
     fun saveListWidth(px: Int)
     fun getListWidth(): Int?
+    /** Last good inbox load (JSON), so opening the app doesn't need a full refresh. */
+    fun saveInboxCache(json: String?)
+    fun getInboxCache(): String?
+    fun saveApiMode(mode: String)
+    fun getApiMode(): String?
 }

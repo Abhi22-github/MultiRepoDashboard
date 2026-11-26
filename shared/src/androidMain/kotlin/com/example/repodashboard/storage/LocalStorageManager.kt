@@ -21,4 +21,8 @@ actual object LocalStorageManager {
     actual fun getApiBase(): String? = null
     actual fun saveListWidth(px: Int) {}
     actual fun getListWidth(): Int? = null
+    actual fun saveInboxCache(json: String?) {}
+    actual fun getInboxCache(): String? = null
+    actual fun saveApiMode(mode: String) {}
+    actual fun getApiMode(): String? = null
 }

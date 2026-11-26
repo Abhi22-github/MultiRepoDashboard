@@ -168,6 +168,11 @@ object FeatherIcons {
         lineP(12f, 22.08f, 12f, 12f)
     }
 
+    val Code: ImageVector = stroke("code") {
+        moveTo(16f, 18f); lineTo(22f, 12f); lineTo(16f, 6f)
+        moveTo(8f, 6f); lineTo(2f, 12f); lineTo(8f, 18f)
+    }
+
     val ListIcon: ImageVector = stroke("list") {
         lineP(8f, 6f, 21f, 6f); lineP(8f, 12f, 21f, 12f); lineP(8f, 18f, 21f, 18f)
         lineP(3.5f, 6f, 3.51f, 6f); lineP(3.5f, 12f, 3.51f, 12f); lineP(3.5f, 18f, 3.51f, 18f)

@@ -232,7 +232,7 @@ fun Dropdown(open: Boolean, onDismiss: () -> Unit, alignEnd: Boolean = false, of
     ) {
         val shape = RoundedCornerShape(12.dp)
         Column(
-            Modifier.widthIn(min = 260.dp, max = 340.dp).heightIn(max = 420.dp)
+            Modifier.widthIn(min = 260.dp, max = 400.dp).heightIn(max = 560.dp)
                 .shadow(12.dp, shape).clip(shape).background(t.pane).border(1.dp, t.line, shape).padding(6.dp),
             content = content
         )

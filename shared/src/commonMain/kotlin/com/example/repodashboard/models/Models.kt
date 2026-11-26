@@ -67,11 +67,41 @@ data class GitHubRepoItem(
 @Serializable
 data class GitHubRelease(
     val tag_name: String,
-    val name: String,
-    val published_at: String,
-    val html_url: String,
-    val body: String? = null
+    val name: String? = null,
+    val published_at: String? = null,
+    val html_url: String = "",
+    val draft: Boolean = false,
 )
+
+/** Fields only returned by GET /pulls/{n}. */
+@Serializable
+data class GitHubPRFull(
+    val additions: Int = 0,
+    val deletions: Int = 0,
+    val comments: Int = 0,
+    val review_comments: Int = 0
+)
+
+@Serializable
+data class GitHubReview(val state: String = "", val user: GitHubPRUser? = null)
+
+@Serializable
+data class GitHubCheckRun(val status: String = "", val conclusion: String? = null)
+
+@Serializable
+data class GitHubCheckRuns(val total_count: Int = 0, val check_runs: List<GitHubCheckRun> = emptyList())
+
+@Serializable
+data class GitHubCombinedStatus(val state: String = "", val total_count: Int = 0)
+
+@Serializable
+data class RateBucket(val limit: Int = 0, val used: Int = 0, val remaining: Int = 0, val reset: Long = 0)
+
+@Serializable
+data class RateResources(val core: RateBucket? = null, val graphql: RateBucket? = null)
+
+@Serializable
+data class RateLimitResponse(val resources: RateResources = RateResources())
 
 @Serializable
 data class GitHubCompareResponse(

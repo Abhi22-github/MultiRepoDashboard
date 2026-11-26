@@ -15,6 +15,8 @@ private const val THEME_KEY = "release-tool:dark-mode"
 private const val PINNED_KEY = "release-tool:pinned"
 private const val API_BASE_KEY = "release-tool:api-base"
 private const val LIST_W_KEY = "release-tool:list-width"
+private const val INBOX_CACHE_KEY = "release-tool:inbox-cache"
+private const val API_MODE_KEY = "release-tool:api-mode"
 
 @OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
 private fun currentTimestamp(): String = js("new Date().toISOString()")
@@ -80,4 +82,17 @@ actual object LocalStorageManager {
     }
 
     actual fun getListWidth(): Int? = localStorage.getItem(LIST_W_KEY)?.toIntOrNull()
+
+    actual fun saveInboxCache(json: String?) {
+        // Quota errors (very large inboxes) just mean no cache.
+        try { if (json == null) localStorage.removeItem(INBOX_CACHE_KEY) else localStorage.setItem(INBOX_CACHE_KEY, json) } catch (_: Throwable) {}
+    }
+
+    actual fun getInboxCache(): String? = try { localStorage.getItem(INBOX_CACHE_KEY) } catch (_: Throwable) { null }
+
+    actual fun saveApiMode(mode: String) {
+        localStorage.setItem(API_MODE_KEY, mode)
+    }
+
+    actual fun getApiMode(): String? = localStorage.getItem(API_MODE_KEY)
 }
