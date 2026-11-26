@@ -134,12 +134,12 @@ fun TokenInputScreen(
                     Box(Modifier.fillMaxWidth().height(1.dp).background(t.line2))
                     Spacer(Modifier.height(6.dp))
                     Note(FeatherIcons.Lock, "Kept only in this browser. It's sent to ${if (enterprise) host.ifEmpty { "your Enterprise server" } else "api.github.com"} and nowhere else.")
-                    Note(FeatherIcons.Info, "Read-only access is enough: pull requests, contents and metadata.")
+                    Note(FeatherIcons.Info, "Use a fine-grained token with read-only access to Pull requests, Contents, Metadata and Commit statuses.")
                 }
             }
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                TextLink("How to create a read-only token", {
-                    uri.openUri(if (enterprise && urlOk) "$urlRaw/settings/tokens" else "https://github.com/settings/tokens")
+                TextLink("Create a fine-grained read-only token", {
+                    uri.openUri(if (enterprise && urlOk) "$urlRaw/settings/personal-access-tokens/new" else "https://github.com/settings/personal-access-tokens/new")
                 }, color = t.accentText)
             }
         }

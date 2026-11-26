@@ -50,7 +50,7 @@ fun ItemListPane(ctx: InboxContext, modifier: Modifier) {
             Txt(s.view.desc, size = 13.sp, color = t.muted)
             if (ctx.ready) {
                 Field(
-                    s.query, { s.query = it }, "Search, or type milestone: or author:", Modifier.fillMaxWidth().padding(top = 6.dp),
+                    s.query, { s.query = it }, "Search, or type label:, milestone: or author:", Modifier.fillMaxWidth().padding(top = 6.dp),
                     leading = FeatherIcons.Search, height = 40.dp, fontSize = 14.sp
                 )
                 if (s.view != InboxView.Releases) FilterBar(ctx, buildItems(s.view, ctx.scoped, ctx.now), alignEnd = false)
@@ -67,9 +67,6 @@ private fun RepoHead(repo: RepoData, onAll: () -> Unit) {
     val t = LocalTokens.current
     val uri = LocalUriHandler.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(t.accentSoft), contentAlignment = Alignment.Center) {
-            Txt(repo.initial, size = 18.sp, weight = FontWeight.Bold, color = t.accentText)
-        }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Txt(repo.name, size = 20.sp, weight = FontWeight.Bold, maxLines = 1)
@@ -90,11 +87,12 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
     val s = ctx.state
     val f = s.filters
     val defs = listOf(
-        Triple("milestone", "Milestone", f.milestone) to { it: Item -> it.milestone ?: "No milestone" },
-        Triple("author", "Author", f.author) to { it: Item -> it.author },
+        Triple("label", "Label", f.label) to { it: Item -> it.labels },
+        Triple("milestone", "Milestone", f.milestone) to { it: Item -> listOf(it.milestone ?: "No milestone") },
+        Triple("author", "Author", f.author) to { it: Item -> listOfNotNull(it.author) },
     )
     fun update(key: String, v: Set<String>) {
-        s.filters = if (key == "milestone") f.copy(milestone = v) else f.copy(author = v)
+        s.filters = when (key) { "label" -> f.copy(label = v); "milestone" -> f.copy(milestone = v); else -> f.copy(author = v) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 2.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -137,6 +135,7 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
         }
         if (!f.isEmpty) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                f.label.forEach { v -> ActiveChip("Label: $v") { s.filters = f.copy(label = f.label - v) } }
                 f.milestone.forEach { v -> ActiveChip("Milestone: $v") { s.filters = f.copy(milestone = f.milestone - v) } }
                 f.author.forEach { v -> ActiveChip("Author: $v") { s.filters = f.copy(author = f.author - v) } }
             }
@@ -243,9 +242,6 @@ private fun RepoGroup(ctx: InboxContext, gi: List<Item>, sel: Item?, collapsed: 
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Ico(FeatherIcons.ChevronRight, 14.dp, t.muted, Modifier.rotate(if (collapsed) 0f else 90f))
-            Box(Modifier.size(24.dp).clip(RoundedCornerShape(6.dp)).background(t.accentSoft), contentAlignment = Alignment.Center) {
-                Txt(repo.initial, size = 12.sp, weight = FontWeight.Bold, color = t.accentText)
-            }
             Txt(repo.name, weight = FontWeight.Bold, maxLines = 1)
             Txt(repo.latestTag ?: "no release", size = 12.sp, color = t.muted, mono = true, maxLines = 1)
             Spacer(Modifier.weight(1f))
@@ -272,7 +268,6 @@ private fun RepoGroup(ctx: InboxContext, gi: List<Item>, sel: Item?, collapsed: 
 @Composable
 private fun ItemTile(ctx: InboxContext, it: Item, on: Boolean) {
     val t = LocalTokens.current
-    LaunchedEffect(it.key) { ctx.state.requestDetail(it) }
     val (status, tone) = statusOf(it, ctx.state.detailOf(it))
     val shape = RoundedCornerShape(12.dp)
     val fill = when { on -> t.sel; it.kind == Kind.Next -> t.warnSoft; else -> t.pane }
@@ -312,5 +307,6 @@ fun PeopleTags(it: Item, modifier: Modifier = Modifier, bordered: Boolean = true
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         it.author?.let { a -> Chip("owner: $a", t.bg, t.ink2, weight = FontWeight.Medium, border = if (bordered) t.line else null) }
         it.milestone?.let { m -> Chip("milestone: $m", t.bg, t.ink2, weight = FontWeight.Medium, border = if (bordered) t.line else null) }
+        it.labels.forEach { l -> Chip(l, t.accentSoft, t.accentText, weight = FontWeight.Medium) }
     }
 }

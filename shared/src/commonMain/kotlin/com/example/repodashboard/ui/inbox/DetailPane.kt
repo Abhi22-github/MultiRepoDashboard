@@ -89,7 +89,6 @@ private fun Header(kicker: String, title: String, badge: String, badgeBg: Color,
 private fun PrDetailView(ctx: InboxContext, it: Item) {
     val t = LocalTokens.current
     val pr = it.pr ?: return
-    LaunchedEffect(it.key) { ctx.state.requestDetail(it) }
     val d = ctx.state.detailOf(it)
     Header(
         "${it.repo.name} · #${pr.number} · by ${pr.user.login}", pr.title,

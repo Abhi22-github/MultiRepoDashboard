@@ -8,7 +8,10 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 
 class GitHubClient(
     private val token: String,
@@ -64,16 +67,13 @@ class GitHubClient(
 
     private suspend inline fun <reified T> getJson(url: String, what: String, crossinline params: HttpRequestBuilder.() -> Unit = {}): Result<T> =
         try {
-            val response = client.get(url) { addHeaders(); params() }
+            val response = gate.withPermit { client.get(url) { addHeaders(); params() } }
             if (response.status.isSuccess()) Result.success(response.body()) else Result.failure(errorOf(response, what))
         } catch (e: Exception) {
             Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
         }
 
     private fun repoUrl(owner: String, repo: String) = "$baseUrl/repos/$owner/$repo"
-
-    suspend fun getLatestRelease(owner: String, repo: String): Result<GitHubRelease> =
-        getJson("${repoUrl(owner, repo)}/releases/latest", "release")
 
     suspend fun compareBranches(owner: String, repo: String, base: String, head: String): Result<GitHubCompareResponse> =
         getJson("${repoUrl(owner, repo)}/compare/$base...$head", "comparison")
@@ -138,47 +138,43 @@ class GitHubClient(
         }
     }
 
-    suspend fun getOpenPRs(owner: String, repo: String): Result<List<GitHubPR>> {
-        val all = mutableListOf<GitHubPR>()
-        var page = 1
-        while (true) {
-            val batch = getJson<List<GitHubPR>>("${repoUrl(owner, repo)}/pulls", "pull requests") {
-                parameter("state", "open")
-                parameter("per_page", 100)
-                parameter("page", page)
-                parameter("sort", "updated")
-                parameter("direction", "desc")
-            }.getOrElse { return Result.failure(it) }
-            all.addAll(batch)
-            if (batch.size < 100) break
-            page++
-        }
-        return Result.success(all)
-    }
+    /** GraphQL endpoint for this API base: /graphql on github.com and ghe.com, /api/graphql on Enterprise Server. */
+    private val graphqlUrl: String =
+        if (this.baseUrl.endsWith("/api/v3")) this.baseUrl.removeSuffix("/api/v3") + "/api/graphql" else "${this.baseUrl}/graphql"
 
-    /** Recently closed PRs; callers keep the ones with merged_at set. */
-    suspend fun getClosedPRs(owner: String, repo: String, perPage: Int = 50): Result<List<GitHubPR>> =
-        getJson("${repoUrl(owner, repo)}/pulls", "pull requests") {
-            parameter("state", "closed")
-            parameter("per_page", perPage)
-            parameter("sort", "updated")
-            parameter("direction", "desc")
+    /** Max requests in flight, to stay under GitHub's secondary (concurrency) limits. */
+    private val gate = Semaphore(8)
+
+    /**
+     * Runs one GraphQL query. Partial errors (e.g. a field the token can't read) still return the data;
+     * only auth, rate-limit and network failures fail the call.
+     */
+    suspend inline fun <reified T> graphql(query: String, variables: Map<String, String?>): Result<T> =
+        graphqlRaw(GqlRequest(query, variables.mapValues { JsonPrimitive(it.value) })) { response ->
+            val body: GqlResponse<T> = response.body()
+            val errors = body.errors.orEmpty()
+            when {
+                errors.any { it.type == "RATE_LIMITED" } ->
+                    Result.failure(APIError("RATE_LIMIT", "GitHub rate limit reached", 200, response.headers["x-ratelimit-reset"]?.toLongOrNull()))
+                body.data != null -> Result.success(body.data)
+                else -> Result.failure(APIError("API_ERROR", errors.firstOrNull()?.message ?: "Empty GraphQL response", 200))
+            }
         }
 
-    suspend fun getReleases(owner: String, repo: String): Result<List<GitHubRelease>> =
-        getJson("${repoUrl(owner, repo)}/releases", "releases") { parameter("per_page", 100) }
-
-    suspend fun getPullFull(owner: String, repo: String, number: Int): Result<GitHubPRFull> =
-        getJson("${repoUrl(owner, repo)}/pulls/$number", "pull request")
-
-    suspend fun getReviews(owner: String, repo: String, number: Int): Result<List<GitHubReview>> =
-        getJson("${repoUrl(owner, repo)}/pulls/$number/reviews", "reviews") { parameter("per_page", 100) }
-
-    suspend fun getCheckRuns(owner: String, repo: String, sha: String): Result<GitHubCheckRuns> =
-        getJson("${repoUrl(owner, repo)}/commits/$sha/check-runs", "checks") { parameter("per_page", 100) }
-
-    suspend fun getCombinedStatus(owner: String, repo: String, sha: String): Result<GitHubCombinedStatus> =
-        getJson("${repoUrl(owner, repo)}/commits/$sha/status", "status")
+    @PublishedApi
+    internal suspend fun <T> graphqlRaw(req: GqlRequest, parse: suspend (HttpResponse) -> Result<T>): Result<T> =
+        try {
+            gate.withPermit {
+                val response = client.post(graphqlUrl) {
+                    addHeaders()
+                    contentType(ContentType.Application.Json)
+                    setBody(req)
+                }
+                if (response.status.isSuccess()) parse(response) else Result.failure(errorOf(response, "data"))
+            }
+        } catch (e: Exception) {
+            Result.failure(APIError("NETWORK_ERROR", "Network error: ${e.message}", null))
+        }
 
     fun close() = client.close()
 }

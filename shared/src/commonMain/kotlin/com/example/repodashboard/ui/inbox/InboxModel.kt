@@ -30,6 +30,7 @@ data class Item(
 ) {
     val author: String? get() = pr?.user?.login ?: ship?.author
     val milestone: String? get() = pr?.milestone?.title?.takeIf { it.isNotBlank() }
+    val labels: List<String> get() = pr?.labels?.map { it.name } ?: ship?.labels.orEmpty()
     val hasPeople: Boolean get() = pr != null || ship != null
 }
 
@@ -63,7 +64,7 @@ fun statusOf(it: Item, detail: PrDetail?): Pair<String, Tone> = when (it.kind) {
     Kind.Next -> it.repo.unreleased.size.let { n -> "$n merged PR${if (n > 1) "s" else ""} not in any release yet" } to Tone.Warn
     Kind.Release -> (it.release?.prs?.let { "${it.size} pull requests" } ?: "Published ${monthDayYear(it.release?.publishedAt)}") to Tone.Muted
     Kind.Pr -> when {
-        detail == null -> (if (it.draft) "Draft · checking…" else "Checking…") to Tone.Muted
+        detail == null -> (if (it.draft) "Draft" else "Open") to Tone.Muted
         it.draft -> "Draft · ${checksWord(detail.checks)}" to Tone.Muted
         detail.checks == Checks.Failing -> "Checks failing · ${detail.reviews}" to Tone.Fail
         detail.checks == Checks.Pending -> "Checks running · ${detail.reviews}" to Tone.Muted
@@ -80,41 +81,45 @@ fun toneColor(t: Tokens, tone: Tone): Color = when (tone) {
     Tone.Warn -> t.warn; Tone.Ok -> t.ok; Tone.Fail -> t.fail; Tone.Muted -> t.muted
 }
 
-data class Filters(val milestone: Set<String> = emptySet(), val author: Set<String> = emptySet()) {
-    val isEmpty: Boolean get() = milestone.isEmpty() && author.isEmpty()
+data class Filters(val label: Set<String> = emptySet(), val milestone: Set<String> = emptySet(), val author: Set<String> = emptySet()) {
+    val isEmpty: Boolean get() = label.isEmpty() && milestone.isEmpty() && author.isEmpty()
 }
 
-private val TOKEN_RE = Regex("^(milestone|author|owner):(.+)$", RegexOption.IGNORE_CASE)
+private val TOKEN_RE = Regex("^(label|milestone|author|owner):(.+)$", RegexOption.IGNORE_CASE)
 
 /** Applies the filter menus plus `milestone:` / `author:` tokens and free words from the search box. */
 fun applyFilters(items: List<Item>, f: Filters, query: String): List<Item> {
     val words = mutableListOf<String>()
     val tokMs = mutableListOf<String>()
     val tokAuthor = mutableListOf<String>()
+    val tokLabel = mutableListOf<String>()
     query.lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }.forEach { w ->
         val m = TOKEN_RE.find(w)
         when {
             m == null -> words += w
             m.groupValues[1] == "milestone" -> tokMs += m.groupValues[2]
+            m.groupValues[1] == "label" -> tokLabel += m.groupValues[2]
             else -> tokAuthor += m.groupValues[2]
         }
     }
-    val anyPeopleFilter = !f.isEmpty || tokMs.isNotEmpty() || tokAuthor.isNotEmpty()
+    val anyPeopleFilter = !f.isEmpty || tokMs.isNotEmpty() || tokAuthor.isNotEmpty() || tokLabel.isNotEmpty()
     return items.filter { it ->
         if (!it.hasPeople && anyPeopleFilter) return@filter false
         val ms = it.milestone ?: "No milestone"
         val author = it.author.orEmpty()
         if (f.milestone.isNotEmpty() && ms !in f.milestone) return@filter false
         if (f.author.isNotEmpty() && author !in f.author) return@filter false
+        if (f.label.isNotEmpty() && it.labels.none { l -> l in f.label }) return@filter false
+        if (tokLabel.any { v -> it.labels.none { l -> l.lowercase().contains(v) } }) return@filter false
         if (tokMs.any { v -> !ms.lowercase().contains(v) }) return@filter false
         if (tokAuthor.any { v -> !author.lowercase().contains(v) }) return@filter false
-        val text = listOf(it.title, it.repo.name, it.metaShort, author, it.milestone.orEmpty()).joinToString(" ").lowercase()
+        val text = (listOf(it.title, it.repo.name, it.metaShort, author, it.milestone.orEmpty()) + it.labels).joinToString(" ").lowercase()
         words.all { w -> text.contains(w) }
     }
 }
 
 /** Options for a filter menu with counts, most common first. */
-fun optionsOf(items: List<Item>, get: (Item) -> String?): List<Pair<String, Int>> =
-    items.filter { it.hasPeople }.mapNotNull(get).groupingBy { it }.eachCount().entries
+fun optionsOf(items: List<Item>, get: (Item) -> List<String>): List<Pair<String, Int>> =
+    items.filter { it.hasPeople }.flatMap(get).groupingBy { it }.eachCount().entries
         .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
         .map { it.key to it.value }

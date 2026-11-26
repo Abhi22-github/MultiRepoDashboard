@@ -1,6 +1,6 @@
 package com.example.repodashboard.data
 
-import com.example.repodashboard.github.GitHubClient
+import com.example.repodashboard.github.*
 import com.example.repodashboard.models.*
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -13,6 +13,7 @@ data class ShipItem(
     val author: String,
     val mergedAt: String?,
     val url: String,
+    val labels: List<String> = emptyList(),
 )
 
 data class ReleaseEntry(
@@ -35,6 +36,8 @@ data class RepoData(
     val drafts: List<GitHubPR>,
     val unreleased: List<ShipItem>,
     val releases: List<ReleaseEntry>,
+    /** Checks, reviews and sizes for open PRs and drafts, by PR number. */
+    val details: Map<Int, PrDetail> = emptyMap(),
 ) {
     val name: String get() = config.repo
     val owner: String get() = config.owner
@@ -74,6 +77,9 @@ fun webBaseOf(apiBase: String): String {
 }
 
 private const val EAGER_RELEASES = 3
+private const val MAX_OPEN_PAGES = 20      // 2,000 open PRs per repo
+private const val MAX_MERGED_PAGES = 5     // 500 merged PRs per repo
+private const val MAX_RELEASE_PAGES = 20   // 2,000 releases per repo
 
 suspend fun loadInbox(client: GitHubClient, config: AppConfig, apiBase: String): InboxData = coroutineScope {
     val web = webBaseOf(apiBase)
@@ -94,40 +100,117 @@ suspend fun loadInbox(client: GitHubClient, config: AppConfig, apiBase: String):
     )
 }
 
+/** Follows a connection's cursor until it ends, [maxPages] is reached, or [stop] says enough. */
+private suspend fun <R, N> paged(
+    maxPages: Int,
+    fetch: suspend (after: String?) -> Result<R>,
+    page: (R) -> Pair<PageInfo, List<N>>,
+    stop: (List<N>) -> Boolean = { false },
+): Result<Pair<List<N>, Boolean>> {
+    val all = mutableListOf<N>()
+    var after: String? = null
+    repeat(maxPages) {
+        val r = fetch(after).getOrElse { return Result.failure(it) }
+        val (info, nodes) = page(r)
+        all += nodes
+        if (!info.hasNextPage || stop(nodes)) return Result.success(all to true)
+        after = info.endCursor
+    }
+    return Result.success(all to false)
+}
+
+private fun GqlPr.toPR(): GitHubPR = GitHubPR(
+    number = number, title = title, user = GitHubPRUser(author?.login ?: "ghost"),
+    draft = isDraft, created_at = createdAt, updated_at = updatedAt, merged_at = mergedAt, html_url = url,
+    labels = labels?.nodes.orEmpty().map { GitHubPRLabel(it.name, it.color) },
+    head = GitHubRef(headRefName), base = GitHubRef(baseRefName),
+    milestone = milestone?.let { GitHubMilestone(it.title) },
+)
+
+private fun GqlPr.toDetail(): PrDetail {
+    val approvals = latestReviews?.nodes.orEmpty().count { it.state == "APPROVED" }
+    val reviews = when {
+        reviewDecision == "CHANGES_REQUESTED" -> "Changes requested"
+        approvals == 1 -> "1 approval"
+        approvals > 1 -> "$approvals approvals"
+        else -> "No reviews"
+    }
+    val checks = when (commits?.nodes?.firstOrNull()?.commit?.statusCheckRollup?.state) {
+        "SUCCESS" -> Checks.Passing
+        "FAILURE", "ERROR" -> Checks.Failing
+        "PENDING", "EXPECTED" -> Checks.Pending
+        else -> Checks.None
+    }
+    return PrDetail(checks, reviews, totalCommentsCount, additions, deletions)
+}
+
 private suspend fun loadRepo(client: GitHubClient, rc: RepositoryConfig, web: String): Result<RepoData> = coroutineScope {
-    val openD = async { client.getOpenPRs(rc.owner, rc.repo) }
-    val closedD = async { client.getClosedPRs(rc.owner, rc.repo) }
-    val relD = async { client.getReleases(rc.owner, rc.repo) }
-    val pulls = openD.await().getOrElse { return@coroutineScope Result.failure(it) }
-    val closed = closedD.await().getOrElse { emptyList() }
-    val rels = relD.await().getOrElse { if ((it as? APIError)?.code == "NOT_FOUND") emptyList() else return@coroutineScope Result.failure(it) }
-        .sortedByDescending { it.published_at }
+    val vars = { after: String? -> mapOf("owner" to rc.owner, "name" to rc.repo, "after" to after) }
 
-    val latest = rels.firstOrNull()
-    val latestMs = isoToMs(latest?.published_at)
-    val defaultBranch = rc.defaultBranch
-    val unreleased = closed
-        .filter { it.merged_at != null && (it.base.ref.isEmpty() || it.base.ref == defaultBranch) }
-        .filter { latestMs == null || (isoToMs(it.merged_at) ?: 0) > latestMs }
-        .sortedByDescending { it.merged_at }
-        .map { ShipItem(it.number, it.title, it.user.login, it.merged_at, it.html_url) }
-
-    val releases = rels.mapIndexed { i, r ->
-        val prev = rels.getOrNull(i + 1)?.tag_name
-        val prs = if (i < EAGER_RELEASES) releasePrs(client, rc, web, prev, r.tag_name) else null
-        ReleaseEntry(r.tag_name, r.name.ifBlank { r.tag_name }, r.published_at, r.html_url, i == 0, prs, prev)
+    val releasesD = async {
+        paged(MAX_RELEASE_PAGES, { client.graphql<RepoWrap<ReleasesRepo>>(Queries.RELEASES, vars(it)) },
+            { r -> r.repository?.releases?.let { it.pageInfo to it.nodes } ?: (PageInfo() to emptyList()) })
+    }
+    val openD = async {
+        var branch: String? = null
+        paged(MAX_OPEN_PAGES, { client.graphql<RepoWrap<PrsRepo>>(Queries.OPEN_PRS, vars(it)) },
+            { r -> branch = branch ?: r.repository?.defaultBranchRef?.name; r.repository?.pullRequests?.let { it.pageInfo to it.nodes } ?: (PageInfo() to emptyList()) })
+            .map { it.first to branch }
     }
 
+    val rels = releasesD.await().getOrElse { return@coroutineScope Result.failure(it) }.first
+        .filter { !it.isDraft && it.publishedAt != null }
+        .sortedByDescending { it.publishedAt }
+
+    // Merged PRs back to the oldest release we show eagerly. Ordered by updatedAt, which is always >= mergedAt,
+    // so once a whole page is older than the cutoff nothing after it can be newer.
+    val cutoffMs = rels.getOrNull(minOf(EAGER_RELEASES, rels.size - 1))?.let { isoToMs(it.publishedAt) }
+    val mergedD = async {
+        paged(if (cutoffMs == null) 1 else MAX_MERGED_PAGES, { client.graphql<RepoWrap<PrsRepo>>(Queries.MERGED_PRS, vars(it)) },
+            { r -> r.repository?.pullRequests?.let { it.pageInfo to it.nodes } ?: (PageInfo() to emptyList()) },
+            stop = { nodes -> cutoffMs != null && nodes.all { (isoToMs(it.updatedAt) ?: 0) < cutoffMs } })
+    }
+
+    val (openNodes, branch) = openD.await().getOrElse { return@coroutineScope Result.failure(it) }
+    val (merged, mergedComplete) = mergedD.await().getOrElse { return@coroutineScope Result.failure(it) }
+    val defaultBranch = branch ?: rc.defaultBranch
+    // How far back the merged list reaches; release windows older than this are loaded on demand instead.
+    val coveredFromMs = if (mergedComplete) Long.MIN_VALUE else merged.minOfOrNull { isoToMs(it.updatedAt) ?: Long.MAX_VALUE } ?: Long.MAX_VALUE
+
+    val mergedToDefault = merged
+        .filter { it.mergedAt != null && (it.baseRefName.isEmpty() || it.baseRefName == defaultBranch) }
+        .map { it to (isoToMs(it.mergedAt) ?: 0L) }
+        .sortedByDescending { it.second }
+    fun ship(p: GqlPr) = ShipItem(p.number, p.title, p.author?.login ?: "ghost", p.mergedAt, p.url, p.labels?.nodes.orEmpty().map { it.name })
+
+    val latestMs = rels.firstOrNull()?.let { isoToMs(it.publishedAt) }
+    val unreleased = mergedToDefault.filter { latestMs == null || it.second > latestMs }.map { ship(it.first) }
+
+    val releases = rels.mapIndexed { i, r ->
+        val prev = rels.getOrNull(i + 1)
+        val hi = isoToMs(r.publishedAt) ?: 0L
+        val lo = prev?.let { isoToMs(it.publishedAt) }
+        val prs = when {
+            prev == null -> emptyList()                              // first release: nothing to compare with
+            i < EAGER_RELEASES && lo != null && lo >= coveredFromMs ->
+                mergedToDefault.filter { it.second in (lo + 1)..hi }.map { ship(it.first) }
+            else -> null                                             // older: loaded when opened
+        }
+        ReleaseEntry(r.tagName, r.name?.takeIf { it.isNotBlank() } ?: r.tagName, r.publishedAt!!, r.url, i == 0, prs, prev?.tagName)
+    }
+
+    val prs = openNodes.map { it.toPR() }
     Result.success(
         RepoData(
-            config = rc,
+            config = rc.copy(defaultBranch = defaultBranch),
             webUrl = "$web/${rc.owner}/${rc.repo}",
-            latestTag = latest?.tag_name,
-            latestPublishedAt = latest?.published_at,
-            open = pulls.filter { !it.draft },
-            drafts = pulls.filter { it.draft },
+            latestTag = rels.firstOrNull()?.tagName,
+            latestPublishedAt = rels.firstOrNull()?.publishedAt,
+            open = prs.filter { !it.draft },
+            drafts = prs.filter { it.draft },
             unreleased = unreleased,
             releases = releases,
+            details = openNodes.associate { it.number to it.toDetail() },
         )
     )
 }
@@ -156,33 +239,3 @@ fun parseCompare(cmp: GitHubCompareResponse, repoWeb: String): List<ShipItem> =
         }
         ShipItem(n, title, c.commit.author.name, c.commit.author.date, "$repoWeb/pull/$n")
     }.distinctBy { it.number }.reversed()
-
-suspend fun loadPrDetail(client: GitHubClient, owner: String, repo: String, pr: GitHubPR): PrDetail? = coroutineScope {
-    val fullD = async { client.getPullFull(owner, repo, pr.number) }
-    val reviewsD = async { client.getReviews(owner, repo, pr.number) }
-    val runsD = async { if (pr.head.sha.isBlank()) null else client.getCheckRuns(owner, repo, pr.head.sha).getOrNull() }
-    val statusD = async { if (pr.head.sha.isBlank()) null else client.getCombinedStatus(owner, repo, pr.head.sha).getOrNull() }
-    val full = fullD.await().getOrNull() ?: return@coroutineScope null
-
-    val latestByUser = reviewsD.await().getOrElse { emptyList() }
-        .filter { it.state != "COMMENTED" && it.state != "PENDING" }
-        .associateBy { it.user?.login }
-    val approvals = latestByUser.values.count { it.state == "APPROVED" }
-    val reviews = when {
-        latestByUser.values.any { it.state == "CHANGES_REQUESTED" } -> "Changes requested"
-        approvals == 1 -> "1 approval"
-        approvals > 1 -> "$approvals approvals"
-        else -> "No reviews"
-    }
-
-    val runs = runsD.await()?.check_runs.orEmpty()
-    val status = statusD.await()
-    val failed = setOf("failure", "timed_out", "cancelled", "action_required", "startup_failure")
-    val checks = when {
-        runs.any { it.conclusion in failed } || status?.state == "failure" || status?.state == "error" -> Checks.Failing
-        runs.any { it.status != "completed" } || (status?.state == "pending" && status.total_count > 0) -> Checks.Pending
-        runs.isNotEmpty() || (status?.total_count ?: 0) > 0 -> Checks.Passing
-        else -> Checks.None
-    }
-    PrDetail(checks, reviews, full.comments + full.review_comments, full.additions, full.deletions)
-}

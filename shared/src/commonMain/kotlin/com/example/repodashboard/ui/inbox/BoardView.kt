@@ -18,6 +18,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.repodashboard.ui.theme.*
 
+const val BOARD_PAGE = 20
+
 private data class Col(val view: InboxView, val title: String, val items: List<Item>, val dot: @Composable () -> Unit, val empty: String, val warn: Boolean = false)
 
 @Composable
@@ -44,7 +46,7 @@ fun BoardView(ctx: InboxContext, modifier: Modifier) {
             }
             if (ctx.ready) {
                 FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                    Field(s.query, { s.query = it }, "Search, or type milestone: or author:", Modifier.widthIn(min = 240.dp, max = 380.dp), leading = FeatherIcons.Search, height = 40.dp)
+                    Field(s.query, { s.query = it }, "Search, or type label:, milestone: or author:", Modifier.widthIn(min = 240.dp, max = 380.dp), leading = FeatherIcons.Search, height = 40.dp)
                     FilterBar(ctx, allPeople, alignEnd = false)
                 }
             }
@@ -84,7 +86,19 @@ private fun BoardColumn(ctx: InboxContext, c: Col, modifier: Modifier, open: (St
             Txt(c.title, Modifier.weight(1f), weight = FontWeight.Bold, color = if (c.warn) t.warn else t.ink, maxLines = 1)
             Chip(c.items.size.toString(), if (c.warn) t.warnDot else t.line, if (c.warn) Color.White else t.ink2, size = 12.sp, weight = FontWeight.Bold, radius = 9.dp)
         }
-        c.items.forEach { it -> BoardCard(ctx, it) { s.layout = Layout.List; s.view = c.view; s.selKey = it.key } }
+        val limit = s.boardLimit[c.view] ?: BOARD_PAGE
+        c.items.take(limit).forEach { it -> BoardCard(ctx, it) { s.layout = Layout.List; s.view = c.view; s.selKey = it.key } }
+        val left = c.items.size - limit
+        if (left > 0) {
+            Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Txt("Showing $limit of ${c.items.size}", Modifier.weight(1f), size = 12.sp, color = t.muted, maxLines = 1)
+                val bshape = RoundedCornerShape(10.dp)
+                Box(
+                    Modifier.height(32.dp).softCard(bshape).click { s.boardLimit = s.boardLimit + (c.view to limit + BOARD_PAGE) }.padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) { Txt("Show ${minOf(BOARD_PAGE, left)} more", size = 13.sp, weight = FontWeight.SemiBold, color = t.accentText, maxLines = 1) }
+            }
+        }
         if (c.items.isEmpty()) Box(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Txt(c.empty, size = 13.sp, color = t.muted)
         }
@@ -105,7 +119,6 @@ private fun BoardColumn(ctx: InboxContext, c: Col, modifier: Modifier, open: (St
 @Composable
 private fun BoardCard(ctx: InboxContext, it: Item, onOpen: () -> Unit) {
     val t = LocalTokens.current
-    LaunchedEffect(it.key) { ctx.state.requestDetail(it) }
     val (status, tone) = statusOf(it, ctx.state.detailOf(it))
     Column(
         Modifier.fillMaxWidth().softCard(RoundedCornerShape(12.dp)).click(onClick = onOpen).padding(horizontal = 14.dp, vertical = 12.dp),

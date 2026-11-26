@@ -46,24 +46,13 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
     var listW by mutableStateOf((LocalStorageManager.getListWidth() ?: 480).coerceIn(360, 760).toFloat())
     var repoQuery by mutableStateOf("")
     var quietOpen by mutableStateOf(false)
+    /** Cards shown per board column; grows by [BOARD_PAGE]. */
+    var boardLimit by mutableStateOf<Map<InboxView, Int>>(emptyMap())
 
-    val details = mutableStateMapOf<String, PrDetail>()
-    private val requested = mutableSetOf<String>()
+    fun detailOf(item: Item): PrDetail? = item.pr?.let { item.repo.details[it.number] }
+
     val releasePrs = mutableStateMapOf<String, List<ShipItem>>()
     private val requestedReleases = mutableSetOf<String>()
-
-    fun requestDetail(item: Item) {
-        val pr = item.pr ?: return
-        val key = prKey(item.repo, pr)
-        if (!requested.add(key)) return
-        val c = client() ?: return
-        scope.launch {
-            val d = loadPrDetail(c, item.repo.owner, item.repo.name, pr)
-            if (d != null) details[key] = d else requested.remove(key)
-        }
-    }
-
-    fun detailOf(item: Item): PrDetail? = item.pr?.let { details[prKey(item.repo, it)] }
 
     fun requestReleasePrs(item: Item) {
         val rel = item.release ?: return
@@ -75,9 +64,9 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
 
     fun prsOf(item: Item): List<ShipItem>? = item.release?.prs ?: releasePrs[item.key]
 
-    /** Drop caches after a refresh so checks and reviews are re-read. */
+    /** Drop on-demand release lists after a refresh. */
     fun clearCaches() {
-        details.clear(); requested.clear(); releasePrs.clear(); requestedReleases.clear()
+        releasePrs.clear(); requestedReleases.clear()
     }
 
     fun pickView(v: InboxView) { view = v; layout = Layout.List; selKey = null; openFilter = null }
@@ -104,7 +93,7 @@ fun InboxScreen(
     val clientRef = rememberUpdatedState(client)
     val state = remember(apiBase) { InboxState(coroutineScope, { clientRef.value }, webBaseOf(apiBase)) }
 
-    // Re-read checks/reviews after every sync.
+    // Re-read older release lists after every sync.
     LaunchedEffect(data?.syncedAt) { if (data?.syncedAt != null) state.clearCaches() }
 
     // Tick so "synced N min ago" and ages stay current.
@@ -286,7 +275,7 @@ private fun RepoRow(ctx: InboxContext, repo: RepoData?) {
     val open = group.sumOf { it.open.size }
     val unrel = group.sumOf { it.unreleased.size }
     val drafts = group.sumOf { it.drafts.size }
-    val hasFail = repo != null && repo.open.any { s.details[prKey(repo, it)]?.checks == Checks.Failing }
+    val hasFail = repo != null && repo.open.any { repo.details[it.number]?.checks == Checks.Failing }
     val shape = RoundedCornerShape(10.dp)
     Row(
         Modifier.fillMaxWidth().then(if (on) Modifier.softCard(shape) else Modifier.clip(shape))
@@ -342,5 +331,5 @@ private fun Resizer(state: InboxState) {
                 ) { _, dx -> state.listW = (state.listW + with(density) { dx.toDp().value }).coerceIn(360f, 760f) }
             },
         contentAlignment = Alignment.Center
-    ) { Box(Modifier.width(4.dp).height(44.dp).clip(RoundedCornerShape(2.dp)).background(if (dragging) t.accent else t.line)) }
+    ) { Box(Modifier.width(3.dp).height(24.dp).clip(RoundedCornerShape(1.5.dp)).background(if (dragging) t.accent else t.line)) }
 }

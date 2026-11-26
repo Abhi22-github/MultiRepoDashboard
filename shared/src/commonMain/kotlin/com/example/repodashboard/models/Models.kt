@@ -52,27 +52,6 @@ data class GitHubPR(
     val milestone: GitHubMilestone? = null
 )
 
-/** Fields only returned by GET /pulls/{n}. */
-@Serializable
-data class GitHubPRFull(
-    val additions: Int = 0,
-    val deletions: Int = 0,
-    val comments: Int = 0,
-    val review_comments: Int = 0
-)
-
-@Serializable
-data class GitHubReview(val state: String = "", val user: GitHubPRUser? = null)
-
-@Serializable
-data class GitHubCheckRun(val status: String = "", val conclusion: String? = null)
-
-@Serializable
-data class GitHubCheckRuns(val total_count: Int = 0, val check_runs: List<GitHubCheckRun> = emptyList())
-
-@Serializable
-data class GitHubCombinedStatus(val state: String = "", val total_count: Int = 0)
-
 @Serializable
 data class GitHubRepoItem(
     val id: Long,
