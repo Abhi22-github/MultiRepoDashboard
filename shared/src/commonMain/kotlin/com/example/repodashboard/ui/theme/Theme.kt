@@ -85,7 +85,8 @@ fun AppTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     else
         lightColorScheme(primary = t.accent, background = t.bg, surface = t.pane, onBackground = t.ink, onSurface = t.ink, error = t.fail)
 
-    CompositionLocalProvider(LocalTokens provides t, LocalSans provides sans, LocalMono provides mono) {
+    val reduced = androidx.compose.runtime.remember { com.example.repodashboard.prefersReducedMotion() }
+    CompositionLocalProvider(LocalTokens provides t, LocalSans provides sans, LocalMono provides mono, LocalReducedMotion provides reduced) {
         MaterialTheme(colorScheme = material, content = content)
     }
 }

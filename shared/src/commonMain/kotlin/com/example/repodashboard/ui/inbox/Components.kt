@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -81,11 +82,11 @@ fun Ico(icon: ImageVector, size: Dp = 16.dp, tint: Color = LocalTokens.current.i
     Icon(icon, contentDescription = null, tint = tint, modifier = modifier.size(size))
 
 @Composable
-fun IconBtn(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 36.dp, tint: Color = LocalTokens.current.muted) {
+fun IconBtn(icon: ImageVector, label: String, onClick: () -> Unit, size: Dp = 36.dp, tint: Color = LocalTokens.current.muted, iconModifier: Modifier = Modifier) {
     Box(
         Modifier.size(size).clip(RoundedCornerShape(8.dp)).click(onClick = onClick).semantics { contentDescription = label },
         contentAlignment = Alignment.Center
-    ) { Ico(icon, 16.dp, tint) }
+    ) { Ico(icon, 16.dp, tint, iconModifier) }
 }
 
 @Composable
@@ -232,7 +233,8 @@ fun Dropdown(open: Boolean, onDismiss: () -> Unit, alignEnd: Boolean = false, of
     ) {
         val shape = RoundedCornerShape(12.dp)
         Column(
-            Modifier.widthIn(min = 260.dp, max = 400.dp).heightIn(max = 560.dp)
+            Modifier.entrance(Unit, 150, fromScale = 0.96f, origin = androidx.compose.ui.graphics.TransformOrigin(if (alignEnd) 1f else 0f, 0f))
+                .widthIn(min = 260.dp, max = 400.dp).heightIn(max = 560.dp)
                 .shadow(12.dp, shape).clip(shape).background(t.pane).border(1.dp, t.line, shape).padding(6.dp),
             content = content
         )
@@ -257,4 +259,34 @@ fun DashedBar(color: Color, modifier: Modifier = Modifier) {
         drawLine(color, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = size.height,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 4.dp.toPx())))
     })
+}
+
+/** Plain hover / long-press tooltip. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun Tip(text: String, onShow: (() -> Unit)? = null, content: @Composable () -> Unit) {
+    val state = androidx.compose.material3.rememberTooltipState()
+    if (onShow != null) androidx.compose.runtime.LaunchedEffect(state.isVisible) { if (state.isVisible) onShow() }
+    androidx.compose.material3.TooltipBox(
+        positionProvider = androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = state,
+    ) { content() }
+}
+
+/** 28×28 "View on GitHub" button that opens [url] without selecting the card under it. */
+@Composable
+fun GhIconButton(url: String, modifier: Modifier = Modifier) {
+    val t = LocalTokens.current
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val shape = RoundedCornerShape(8.dp)
+    Box(modifier) {
+        Tip("View on GitHub") {
+            Box(
+                Modifier.size(28.dp).clip(shape).background(t.pane).border(1.dp, t.line, shape)
+                    .click { uri.openUri(url) }.semantics { contentDescription = "View on GitHub" },
+                contentAlignment = Alignment.Center
+            ) { Ico(FeatherIcons.GitHub, 14.dp, t.muted) }
+        }
+    }
 }

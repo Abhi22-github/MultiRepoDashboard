@@ -70,6 +70,7 @@ data class GqlPr(
     val createdAt: String = "",
     val updatedAt: String = "",
     val mergedAt: String? = null,
+    val body: String? = null,
     val author: GqlActor? = null,
     val headRefName: String = "",
     val baseRefName: String = "",
@@ -115,7 +116,7 @@ data class FirstPageRepo(
 
 object Queries {
     private const val PR_FIELDS = """
-        number title url isDraft createdAt updatedAt mergedAt
+        number title url isDraft createdAt updatedAt mergedAt body
         author { login } headRefName baseRefName
         milestone { title }
         labels(first: 10) { nodes { name color } }

@@ -1,5 +1,10 @@
 package com.example.repodashboard.ui.inbox
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -50,6 +55,26 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
     var quietOpen by mutableStateOf(false)
     /** Cards shown per board column; grows by [BOARD_PAGE]. */
     var boardLimit by mutableStateOf<Map<InboxView, Int>>(emptyMap())
+    /** Card whose details panel is open on the Board; null = closed. */
+    var boardSel by mutableStateOf<String?>(null)
+    /** All loaded repos; set by the screen on every composition. */
+    var repos: List<RepoData> = emptyList()
+
+    /** Dependency PRs fetched from GitHub, by [DepRef.key]. */
+    private val fetchedDeps = mutableStateMapOf<String, DepInfo>()
+    private val requestedDeps = mutableSetOf<String>()
+
+    fun depInfo(d: DepRef): DepInfo? = localDep(d, repos) ?: fetchedDeps[d.key]
+
+    fun requestDep(d: DepRef) {
+        if (localDep(d, repos) != null || !requestedDeps.add(d.key)) return
+        val c = client() ?: run { requestedDeps.remove(d.key); return }
+        scope.launch {
+            fetchedDeps[d.key] = c.getPull(d.owner, d.repo, d.number)
+                .map { depInfoOf(it, trackedRepo(d, repos)) }
+                .getOrElse { DepInfo(null, DepState.Unknown) }
+        }
+    }
 
     /** Draft details, loaded one at a time when a draft is opened. */
     private val draftDetails = mutableStateMapOf<String, PrDetail>()
@@ -85,10 +110,10 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
 
     /** Drop on-demand release lists after a refresh. */
     fun clearCaches() {
-        releasePrs.clear(); requestedReleases.clear(); draftDetails.clear(); requestedDrafts.clear()
+        releasePrs.clear(); requestedReleases.clear(); draftDetails.clear(); requestedDrafts.clear(); fetchedDeps.clear(); requestedDeps.clear()
     }
 
-    fun pickView(v: InboxView) { view = v; layout = Layout.List; selKey = null; openFilter = null }
+    fun pickView(v: InboxView) { view = v; layout = Layout.List; selKey = null; openFilter = null; boardSel = null }
     fun pickScope(name: String?) { repoScope = name; selKey = null }
 }
 
@@ -125,6 +150,7 @@ fun InboxScreen(
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = nowMs() } }
 
     val allRepos = data?.repos.orEmpty()
+    state.repos = allRepos
     val order = remember(allRepos, pinned) { allRepos.sortedByDescending { it.config.name in pinned } }
     if (state.repoScope != null && allRepos.none { it.config.name == state.repoScope }) state.repoScope = null
     val scoped = state.repoScope?.let { s -> order.filter { it.config.name == s } } ?: order
@@ -150,12 +176,12 @@ fun InboxScreen(
     )
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
-        TopBar(state, counts, ready, synced, isDark, onRefresh, onToggleTheme, onManageRepos, onSignOut) {
+        TopBar(state, counts, ready, loading, synced, isDark, onRefresh, onToggleTheme, onManageRepos, onSignOut) {
             DevToolsButton(apiMode, onApiMode, rate, onLoadRate, allRepos)
         }
         BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
             val wide = maxWidth >= 1100.dp
-            Row(Modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (wide) RepoPanel(ctx, Modifier.width(270.dp).fillMaxHeight())
                 if (state.layout == Layout.Board) {
                     BoardView(ctx, Modifier.weight(1f).fillMaxHeight())
@@ -192,11 +218,19 @@ class InboxContext(
 
 @Composable
 private fun TopBar(
-    state: InboxState, counts: Map<InboxView, Int>, ready: Boolean, synced: String, isDark: Boolean,
+    state: InboxState, counts: Map<InboxView, Int>, ready: Boolean, loading: Boolean, synced: String, isDark: Boolean,
     onRefresh: () -> Unit, onToggleTheme: () -> Unit, onManageRepos: () -> Unit, onSignOut: () -> Unit,
     devTools: @Composable () -> Unit,
 ) {
     val t = LocalTokens.current
+    // Refresh icon: one turn per click, and keeps turning while a sync runs.
+    val reduced = LocalReducedMotion.current
+    val spin = remember { Animatable(0f) }
+    val loadingRef = rememberUpdatedState(loading)
+    var clicks by remember { mutableStateOf(0) }
+    suspend fun turn() { spin.snapTo(0f); spin.animateTo(360f, tween(700, easing = LinearEasing)) }
+    LaunchedEffect(clicks) { if (clicks > 0 && !reduced) { turn(); while (loadingRef.value) turn() } }
+    LaunchedEffect(loading) { if (loading && !reduced && !spin.isRunning) while (loadingRef.value) turn() }
     Column(Modifier.fillMaxWidth().background(t.pane)) {
         FlowRow(
             Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 10.dp),
@@ -221,7 +255,7 @@ private fun TopBar(
                     LayoutToggle("Board", FeatherIcons.Columns, state.layout == Layout.Board) { state.layout = Layout.Board; state.openFilter = null }
                 }
                 Txt(synced, Modifier.padding(start = 18.dp, end = 10.dp), size = 12.sp, color = t.muted, maxLines = 1)
-                IconBtn(FeatherIcons.RefreshCw, "Refresh from GitHub", onRefresh)
+                IconBtn(FeatherIcons.RefreshCw, "Refresh from GitHub", { clicks++; onRefresh() }, iconModifier = Modifier.graphicsLayer { rotationZ = spin.value })
                 devTools()
                 IconBtn(if (isDark) FeatherIcons.Sun else FeatherIcons.Moon, if (isDark) "Switch to light mode" else "Switch to dark mode", onToggleTheme)
                 IconBtn(FeatherIcons.Sliders, "Manage repositories", onManageRepos)
@@ -240,14 +274,19 @@ private fun ViewPill(v: InboxView, on: Boolean, count: String, onClick: () -> Un
         InboxView.Ship -> FeatherIcons.Package; InboxView.Open -> FeatherIcons.GitPullRequest
         InboxView.Drafts -> FeatherIcons.FileDashed; InboxView.Releases -> FeatherIcons.Tag
     }
+    val bg by animateColorAsState(if (on) t.ink else Color.Transparent, motion(150))
+    val edge by animateColorAsState(if (on) t.ink else t.line, motion(150))
+    val fg by animateColorAsState(if (on) t.pane else t.ink2, motion(150))
+    val chipBg by animateColorAsState(if (on) t.pane else t.line, motion(150))
+    val chipFg by animateColorAsState(if (on) t.ink else t.ink2, motion(150))
     Row(
-        Modifier.height(36.dp).clip(shape).background(if (on) t.ink else Color.Transparent)
-            .border(1.dp, if (on) t.ink else t.line, shape).click(role = Role.Tab, onClick = onClick).padding(horizontal = 14.dp),
+        Modifier.height(36.dp).clip(shape).background(bg)
+            .border(1.dp, edge, shape).click(role = Role.Tab, onClick = onClick).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Ico(icon, 16.dp, if (on) t.pane else t.ink2)
-        Txt(v.label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) t.pane else t.ink2, maxLines = 1)
-        Chip(count, if (on) t.pane else t.line, if (on) t.ink else t.ink2, weight = FontWeight.Bold, radius = 8.dp)
+        Ico(icon, 16.dp, fg)
+        Txt(v.label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = fg, maxLines = 1)
+        Chip(count, chipBg, chipFg, weight = FontWeight.Bold, radius = 8.dp)
     }
 }
 
@@ -259,8 +298,9 @@ private fun LayoutToggle(label: String, icon: androidx.compose.ui.graphics.vecto
         Modifier.height(32.dp).then(if (on) Modifier.softCard(shape) else Modifier.clip(shape)).click(onClick = onClick).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Ico(icon, 15.dp, if (on) t.ink else t.muted)
-        Txt(label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) t.ink else t.muted)
+        val fg by animateColorAsState(if (on) t.ink else t.muted, motion(150))
+        Ico(icon, 15.dp, fg)
+        Txt(label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = fg)
     }
 }
 

@@ -1,5 +1,6 @@
 package com.example.repodashboard.ui.inbox
 
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -46,11 +47,15 @@ fun DetailPane(ctx: InboxContext, modifier: Modifier) {
                 }
             }
             else -> key(it.key) {
-                when (it.kind) {
-                    Kind.Pr -> PrDetailView(ctx, it)
-                    Kind.Ship -> ShipDetailView(it)
-                    Kind.Next -> NextDetailView(it)
-                    Kind.Release -> ReleaseDetailView(ctx, it)
+                SelectionContainer(Modifier.entrance(it.key to ctx.state.view, 160, offsetY = 4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                        when (it.kind) {
+                            Kind.Pr -> PrDetailView(ctx, it)
+                            Kind.Ship -> ShipDetailView(ctx, it)
+                            Kind.Next -> NextDetailView(it)
+                            Kind.Release -> ReleaseDetailView(ctx, it)
+                        }
+                    }
                 }
             }
         }
@@ -118,6 +123,7 @@ private fun PrDetailView(ctx: InboxContext, it: Item) {
             }
         }
     }
+    DescriptionSection(ctx, pr.body, it.repo)
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Txt("Branch", size = 15.sp, weight = FontWeight.Bold)
         Row(
@@ -152,7 +158,7 @@ private fun CopyButton(text: String, label: String) {
 }
 
 @Composable
-private fun ShipDetailView(it: Item) {
+private fun ShipDetailView(ctx: InboxContext, it: Item) {
     val t = LocalTokens.current
     val s = it.ship ?: return
     val repo = it.repo
@@ -173,8 +179,13 @@ private fun ShipDetailView(it: Item) {
         Modifier.fillMaxWidth().border(1.dp, t.line, RoundedCornerShape(12.dp)).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Txt("Everything unreleased in ${repo.name}", size = 16.sp, weight = FontWeight.Bold)
-        repo.unreleased.forEach { w -> PrLine(w, bordered = false) }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+            Txt("Everything unreleased in ${repo.name}", size = 16.sp, weight = FontWeight.Bold)
+            Txt("Jira key and dependencies come from each PR's description", size = 12.sp, color = t.muted)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            repo.unreleased.forEach { w -> UnreleasedRow(ctx, repo, w, on = w.number == s.number) }
+        }
     }
 }
 
@@ -232,5 +243,24 @@ private fun PrLine(p: ShipItem, bordered: Boolean) {
         Txt("#${p.number}", Modifier.width(44.dp), color = t.muted, mono = true, maxLines = 1)
         Txt(p.title, Modifier.weight(1f), weight = if (bordered) FontWeight.Medium else FontWeight.Normal, maxLines = 2)
         Txt(p.author, size = 13.sp, color = t.muted, maxLines = 1)
+    }
+}
+
+/** One row of "Everything unreleased": #n | title | Jira | dependencies | author. */
+@Composable
+private fun UnreleasedRow(ctx: InboxContext, repo: RepoData, w: ShipItem, on: Boolean) {
+    val t = LocalTokens.current
+    val uri = LocalUriHandler.current
+    val links = remember(w.body, repo.config.name) { linksOf(w.body, repo) }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 36.dp).clip(RoundedCornerShape(8.dp)).background(if (on) t.sel else Color.Transparent)
+            .click { uri.openUri(w.url) }.padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Txt("#${w.number}", Modifier.width(40.dp), color = t.muted, mono = true, maxLines = 1)
+        Txt(w.title, Modifier.weight(1f), weight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1)
+        links.jira.firstOrNull()?.let { JiraChip(it, small = true) } ?: Txt("—", size = 13.sp, color = t.muted)
+        DepCountChip(ctx, links.deps, eager = on)
+        Txt(w.author, Modifier.width(110.dp), size = 13.sp, color = t.muted, maxLines = 1)
     }
 }

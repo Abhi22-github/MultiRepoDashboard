@@ -1,5 +1,6 @@
 package com.example.repodashboard.ui.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -150,11 +151,12 @@ fun TokenInputScreen(
 private fun Segment(label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val t = LocalTokens.current
     val shape = RoundedCornerShape(9.dp)
+    val fg by animateColorAsState(if (on) t.ink else t.ink2, motion(150))
     Box(
         modifier.height(38.dp).then(if (on) Modifier.softCard(shape) else Modifier.clip(shape))
             .click(role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { Txt(label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) t.ink else t.ink2, maxLines = 1) }
+    ) { Txt(label, size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = fg, maxLines = 1) }
 }
 
 @Composable

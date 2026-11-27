@@ -1,9 +1,17 @@
 package com.example.repodashboard.ui.inbox
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -24,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.example.repodashboard.data.RepoData
 import com.example.repodashboard.data.SyncProblem
 import com.example.repodashboard.data.minutesUntil
+import com.example.repodashboard.data.nowMs
 import com.example.repodashboard.ui.theme.*
 
 /** Items of the current view after scope, filters and search. */
@@ -41,29 +57,100 @@ fun ItemListPane(ctx: InboxContext, modifier: Modifier) {
     val items = currentItems(ctx)
     val sel = selectedItem(ctx, items)
     val shape = RoundedCornerShape(14.dp)
+    val listState = rememberLazyListState()
+    val fold = rememberHeaderFold(listState) { s.openFilter = null }
+    val folded = fold.folded
+    val anim = motion<Dp>(FOLD_MS)
+    val padH by animateDpAsState(if (folded) 16.dp else 20.dp, anim)
+    val padTop by animateDpAsState(if (folded) 12.dp else 20.dp, anim)
+    val padBottom by animateDpAsState(if (folded) 12.dp else 14.dp, anim)
+    val gap by animateDpAsState(if (folded) 0.dp else 6.dp, anim)
+    val searchTop by animateDpAsState(if (folded) 0.dp else 8.dp, anim)
+    val problem = ctx.data?.problem
+    val hasBanner = problem == SyncProblem.RateLimited || problem == SyncProblem.TokenExpired
 
     Column(modifier.softCard(shape)) {
-        Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            val head = s.repoScope?.let { n -> ctx.repos.firstOrNull { it.config.name == n } }
-            if (head != null) RepoHead(head) { s.pickScope(null) }
-            else Txt("All repositories · ${s.view.title}", Modifier.padding(top = 4.dp), size = 22.sp, weight = FontWeight.Bold, letterSpacing = (-0.2).sp)
-            Txt(s.view.desc, size = 13.sp, color = t.muted)
+        Column(Modifier.fillMaxWidth().padding(start = padH, end = padH, top = padTop, bottom = padBottom), verticalArrangement = Arrangement.spacedBy(gap)) {
+            FoldAway(!folded) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val head = s.repoScope?.let { n -> ctx.repos.firstOrNull { it.config.name == n } }
+                    if (head != null) RepoHead(head) { s.pickScope(null) }
+                    else Txt("All repositories · ${s.view.title}", Modifier.padding(top = 4.dp), size = 22.sp, weight = FontWeight.Bold, letterSpacing = (-0.2).sp)
+                    Txt(s.view.desc, size = 13.sp, color = t.muted)
+                }
+            }
             if (ctx.ready) {
                 Field(
-                    s.query, { s.query = it }, "Search, or type label:, milestone: or author:", Modifier.fillMaxWidth().padding(top = 6.dp),
+                    s.query, { s.query = it }, "Search, or type label:, milestone: or author:", Modifier.fillMaxWidth().padding(top = searchTop),
                     leading = FeatherIcons.Search, height = 40.dp, fontSize = 14.sp
                 )
                 val groupCount = items.map { it.repo.config.name }.distinct().size
-                if (s.view != InboxView.Releases) FilterBar(
-                    ctx, buildItems(s.view, ctx.scoped, ctx.now), alignEnd = false,
-                    bulk = if (groupCount > 1) ({ BulkToggle(s) }) else null,
-                )
+                if (s.view != InboxView.Releases) FoldAway(!folded) {
+                    FilterBar(
+                        ctx, buildItems(s.view, ctx.scoped, ctx.now), alignEnd = false,
+                        bulk = if (groupCount > 1) ({ BulkToggle(s) }) else null,
+                    )
+                }
             }
-            ProblemBanner(ctx)
+            if (hasBanner) FoldAway(!folded) { ProblemBanner(ctx) }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(t.line2))
-        ListBody(ctx, items, sel, Modifier.fillMaxWidth().weight(1f))
+        ListBody(
+            ctx, items, sel, listState,
+            Modifier.fillMaxWidth().weight(1f).entrance(s.view to s.repoScope, 220, offsetY = 6.dp, firstScale = 0.985f).nestedScroll(fold.connection)
+        )
     }
+}
+
+private const val FOLD_MS = 240
+
+@Composable
+private fun ColumnScope.FoldAway(visible: Boolean, content: @Composable () -> Unit) = AnimatedVisibility(
+    visible,
+    enter = expandVertically(motion(FOLD_MS)) + fadeIn(motion(180)),
+    exit = shrinkVertically(motion(FOLD_MS)) + fadeOut(motion(180)),
+) { content() }
+
+/** Folds the list header away while scrolling down and brings it back on the way up. */
+class HeaderFold(private val list: LazyListState, private val density: Density, private val onFold: () -> Unit) {
+    var folded by mutableStateOf(false)
+        private set
+    private var lockUntil = 0L
+    private var upAcc = 0f
+
+    private fun set(v: Boolean) {
+        folded = v; upAcc = 0f; lockUntil = nowMs() + 400
+        if (v) onFold()
+    }
+
+    val connection = object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+            if (nowMs() < lockUntil) return Offset.Zero
+            val dy = available.y
+            if (dy < 0f) {
+                upAcc = 0f
+                val past = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > with(density) { 60.dp.toPx() }
+                if (!folded && (past || list.canScrollForward)) set(true)
+            } else if (dy > 0f && folded) {
+                upAcc += dy
+                if (upAcc >= with(density) { 24.dp.toPx() } || !list.canScrollBackward) set(false)
+            }
+            return Offset.Zero
+        }
+    }
+
+    fun reachedTop() { if (folded && nowMs() >= lockUntil) set(false) }
+}
+
+@Composable
+fun rememberHeaderFold(list: LazyListState, onFold: () -> Unit): HeaderFold {
+    val density = LocalDensity.current
+    val onFoldRef = rememberUpdatedState(onFold)
+    val fold = remember(list, density) { HeaderFold(list, density) { onFoldRef.value() } }
+    LaunchedEffect(fold) {
+        snapshotFlow { list.firstVisibleItemIndex == 0 && list.firstVisibleItemScrollOffset == 0 }.collect { if (it) fold.reachedTop() }
+    }
+    return fold
 }
 
 @Composable
@@ -86,7 +173,7 @@ private fun RepoHead(repo: RepoData, onAll: () -> Unit) {
 
 /** Milestone / Author menus + active filter chips. */
 @Composable
-fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean, bulk: (@Composable () -> Unit)? = null) {
+fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean, bulk: (@Composable () -> Unit)? = null, showChips: Boolean = true) {
     val t = LocalTokens.current
     val s = ctx.state
     val f = s.filters
@@ -105,13 +192,15 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean, bulk: (@
                 val open = s.openFilter == key
                 val active = sel.isNotEmpty() || open
                 val shape = RoundedCornerShape(10.dp)
+                val ring by animateColorAsState(if (active) t.accent else Color.Transparent, motion(150))
+                val fg by animateColorAsState(if (active) t.accentText else t.ink2, motion(150))
                 Box {
                     Row(
-                        Modifier.height(34.dp).softCard(shape).then(if (active) Modifier.border(1.5.dp, t.accent, shape) else Modifier)
+                        Modifier.height(34.dp).softCard(shape).border(1.5.dp, ring, shape)
                             .click { s.openFilter = if (open) null else key }.padding(start = 12.dp, end = 10.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Txt(label, size = 13.sp, weight = if (active) FontWeight.SemiBold else FontWeight.Medium, color = if (active) t.accentText else t.ink2)
+                        Txt(label, size = 13.sp, weight = if (active) FontWeight.SemiBold else FontWeight.Medium, color = fg)
                         if (sel.isNotEmpty()) Chip(sel.size.toString(), t.accent, Color.White, weight = FontWeight.Bold, radius = 8.dp)
                         Ico(FeatherIcons.ChevronDown, 14.dp, t.muted)
                     }
@@ -138,13 +227,20 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean, bulk: (@
             if (!f.isEmpty) TextLink("Clear all", { s.filters = Filters(); s.openFilter = null })
             if (bulk != null) { Spacer(Modifier.weight(1f)); bulk() }
         }
-        if (!f.isEmpty) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                f.label.forEach { v -> ActiveChip("Label: $v") { s.filters = f.copy(label = f.label - v) } }
-                f.milestone.forEach { v -> ActiveChip("Milestone: $v") { s.filters = f.copy(milestone = f.milestone - v) } }
-                f.author.forEach { v -> ActiveChip("Author: $v") { s.filters = f.copy(author = f.author - v) } }
-            }
-        }
+        if (showChips) ActiveFilterChips(ctx)
+    }
+}
+
+/** One removable chip per active filter value. */
+@Composable
+fun ActiveFilterChips(ctx: InboxContext) {
+    val s = ctx.state
+    val f = s.filters
+    if (f.isEmpty) return
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        f.label.forEach { v -> ActiveChip("Label: $v") { s.filters = f.copy(label = f.label - v) } }
+        f.milestone.forEach { v -> ActiveChip("Milestone: $v") { s.filters = f.copy(milestone = f.milestone - v) } }
+        f.author.forEach { v -> ActiveChip("Author: $v") { s.filters = f.copy(author = f.author - v) } }
     }
 }
 
@@ -157,8 +253,8 @@ private fun BulkToggle(s: InboxState) {
         Modifier.clip(shape).background(t.pane).border(1.dp, t.line, shape).padding(2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        IconBtn(FeatherIcons.ChevronsUpDown, "Expand all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = false }, size = 32.dp)
-        IconBtn(FeatherIcons.ChevronsDownUp, "Collapse all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = true }, size = 32.dp)
+        Tip("Expand all") { IconBtn(FeatherIcons.ChevronsUpDown, "Expand all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = false }, size = 32.dp) }
+        Tip("Collapse all") { IconBtn(FeatherIcons.ChevronsDownUp, "Collapse all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = true }, size = 32.dp) }
     }
 }
 
@@ -190,7 +286,7 @@ private fun ProblemBanner(ctx: InboxContext) {
         else -> return
     }
     Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp).clip(RoundedCornerShape(10.dp)).background(bg).padding(horizontal = 14.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(top = 10.dp).entrance(data.problem, 200, offsetY = (-8).dp).clip(RoundedCornerShape(10.dp)).background(bg).padding(horizontal = 14.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Ico(FeatherIcons.AlertTriangle, 18.dp, fg, Modifier.padding(top = 2.dp))
@@ -205,10 +301,10 @@ private fun ProblemBanner(ctx: InboxContext) {
 private data class Banner(val title: String, val body: String, val bg: Color, val fg: Color, val link: Boolean)
 
 @Composable
-private fun ListBody(ctx: InboxContext, items: List<Item>, sel: Item?, modifier: Modifier) {
+private fun ListBody(ctx: InboxContext, items: List<Item>, sel: Item?, listState: LazyListState, modifier: Modifier) {
     val t = LocalTokens.current
     val s = ctx.state
-    LazyColumn(modifier, contentPadding = PaddingValues(8.dp)) {
+    LazyColumn(modifier, state = listState, contentPadding = PaddingValues(8.dp)) {
         when {
             ctx.initialLoading -> items(listOf(0.7f, 0.55f, 0.8f, 0.6f)) { w ->
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -238,9 +334,11 @@ private fun ListBody(ctx: InboxContext, items: List<Item>, sel: Item?, modifier:
                 val groups = items.groupBy { it.repo.config.name }.entries.toList()
                 groups.forEachIndexed { idx, (name, gi) ->
                     item(key = "g$name") {
+                        Box(Modifier.animateItem(fadeInSpec = motion(180), placementSpec = null, fadeOutSpec = null)) {
                         val collapsed = s.collapsed[name] ?: s.allCollapsed ?: (idx >= 4)
                         RepoGroup(ctx, gi, sel, collapsed = collapsed) {
                             s.collapsed = s.collapsed + (name to !collapsed)
+                        }
                         }
                     }
                 }
@@ -261,7 +359,8 @@ private fun RepoGroup(ctx: InboxContext, gi: List<Item>, sel: Item?, collapsed: 
             Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).click(onClick = onToggle).padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Ico(FeatherIcons.ChevronRight, 14.dp, t.muted, Modifier.rotate(if (collapsed) 0f else 90f))
+            val chev by animateFloatAsState(if (collapsed) 0f else 90f, motion(200))
+            Ico(FeatherIcons.ChevronRight, 14.dp, t.muted, Modifier.graphicsLayer { rotationZ = chev })
             Txt(repo.name, weight = FontWeight.Bold, maxLines = 1)
             Txt(repo.latestTag ?: "no release", size = 12.sp, color = t.muted, mono = true, maxLines = 1)
             Spacer(Modifier.weight(1f))
@@ -280,7 +379,7 @@ private fun RepoGroup(ctx: InboxContext, gi: List<Item>, sel: Item?, collapsed: 
                 pills.forEach { (n, label, c) -> Chip("$n $label", c.first, c.second, size = 12.sp, radius = 6.dp) }
             }
         } else {
-            gi.forEach { ItemTile(ctx, it, on = it.key == sel?.key) }
+            gi.forEach { key(it.key) { Box(Modifier.entrance(Unit, 180)) { ItemTile(ctx, it, on = it.key == sel?.key) } } }
         }
     }
 }
@@ -291,6 +390,8 @@ private fun ItemTile(ctx: InboxContext, it: Item, on: Boolean) {
     val (status, tone) = statusOf(it, ctx.state.detailOf(it))
     val shape = RoundedCornerShape(12.dp)
     val fill = when { on -> t.sel; it.kind == Kind.Next -> t.warnSoft; else -> t.pane }
+    val url = (it.pr?.html_url ?: it.ship?.url)?.takeIf { u -> u.isNotBlank() }
+    Box(Modifier.fillMaxWidth()) {
     Row(
         Modifier.fillMaxWidth().softCard(shape, fill)
             .then(if (it.kind == Kind.Next && !on) Modifier.border(1.5.dp, t.warnLine, shape) else Modifier)
@@ -298,7 +399,7 @@ private fun ItemTile(ctx: InboxContext, it: Item, on: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Box(Modifier.padding(top = 7.dp)) { KindDot(it) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.weight(1f).padding(end = if (url != null) 34.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Txt(it.metaShort, size = 12.sp, color = t.muted, maxLines = 1)
                 Txt(it.age, size = 12.sp, color = t.muted, maxLines = 1)
@@ -307,6 +408,8 @@ private fun ItemTile(ctx: InboxContext, it: Item, on: Boolean) {
             Txt(status, size = 13.sp, color = toneColor(t, tone), maxLines = 1)
             if (it.hasPeople) PeopleTags(it, Modifier.padding(top = 2.dp))
         }
+    }
+    if (url != null) GhIconButton(url, Modifier.align(Alignment.BottomEnd).padding(10.dp))
     }
 }
 

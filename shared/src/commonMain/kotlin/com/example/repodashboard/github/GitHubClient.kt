@@ -155,6 +155,9 @@ class GitHubClient(
         return Result.success(all)
     }
 
+    suspend fun getPull(owner: String, repo: String, number: Int): Result<GitHubPR> =
+        getJson("${repoUrl(owner, repo)}/pulls/$number", "pull request")
+
     suspend fun getPullFull(owner: String, repo: String, number: Int): Result<GitHubPRFull> =
         getJson("${repoUrl(owner, repo)}/pulls/$number", "pull request")
 

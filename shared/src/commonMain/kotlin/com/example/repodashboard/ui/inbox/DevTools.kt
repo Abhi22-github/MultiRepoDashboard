@@ -1,5 +1,6 @@
 package com.example.repodashboard.ui.inbox
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -96,8 +97,10 @@ private fun hint(mode: ApiMode, rate: RateLimitResponse?, est: Map<ApiMode, Stri
 private fun ModeRow(m: ModeInfo, on: Boolean, onClick: () -> Unit) {
     val t = LocalTokens.current
     val shape = RoundedCornerShape(10.dp)
+    val bg by animateColorAsState(if (on) t.accentSoft else t.pane, motion(150))
+    val edge by animateColorAsState(if (on) t.accent else t.line, motion(150))
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(if (on) t.accentSoft else t.pane).border(1.5.dp, if (on) t.accent else t.line, shape)
+        Modifier.fillMaxWidth().clip(shape).background(bg).border(1.5.dp, edge, shape)
             .click(role = Role.RadioButton, onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {

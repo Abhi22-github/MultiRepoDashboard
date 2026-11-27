@@ -6,3 +6,4 @@ class WasmPlatform: Platform {
 
 actual fun getPlatform(): Platform = WasmPlatform()
 actual fun openUrl(url: String) { kotlinx.browser.window.open(url, "_blank") }
+actual fun prefersReducedMotion(): Boolean = kotlinx.browser.window.matchMedia("(prefers-reduced-motion: reduce)").matches

@@ -16,6 +16,8 @@ data class ShipItem(
     val mergedAt: String?,
     val url: String,
     val labels: List<String> = emptyList(),
+    /** PR description; null for items built from commits. */
+    val body: String? = null,
 )
 
 @Serializable
@@ -150,7 +152,7 @@ private suspend fun <R, N> paged(
 
 private fun GqlPr.toPR(): GitHubPR = GitHubPR(
     number = number, title = title, user = GitHubPRUser(author?.login ?: "ghost"),
-    draft = isDraft, created_at = createdAt, updated_at = updatedAt, merged_at = mergedAt, html_url = url,
+    draft = isDraft, created_at = createdAt, updated_at = updatedAt, merged_at = mergedAt, html_url = url, body = body,
     labels = labels?.nodes.orEmpty().map { GitHubPRLabel(it.name, it.color) },
     head = GitHubRef(headRefName), base = GitHubRef(baseRefName),
     milestone = milestone?.let { GitHubMilestone(it.title) },
@@ -191,7 +193,7 @@ private fun assembleRepo(
         .filter { it.merged_at != null && (it.base.ref.isEmpty() || it.base.ref == defaultBranch) }
         .map { it to (isoToMs(it.merged_at) ?: 0L) }
         .sortedByDescending { it.second }
-    fun ship(p: GitHubPR) = ShipItem(p.number, p.title, p.user.login, p.merged_at, p.html_url, p.labels.map { it.name })
+    fun ship(p: GitHubPR) = ShipItem(p.number, p.title, p.user.login, p.merged_at, p.html_url, p.labels.map { it.name }, p.body)
 
     val latestMs = rels.firstOrNull()?.let { isoToMs(it.publishedAt) }
     val unreleased = mergedToDefault.filter { latestMs == null || it.second > latestMs }.map { ship(it.first) }

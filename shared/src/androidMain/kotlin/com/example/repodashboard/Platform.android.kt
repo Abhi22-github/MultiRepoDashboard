@@ -8,3 +8,4 @@ class AndroidPlatform : Platform {
 
 actual fun getPlatform(): Platform = AndroidPlatform()
 actual fun openUrl(url: String) = Unit
+actual fun prefersReducedMotion(): Boolean = false
