@@ -27,7 +27,7 @@ fun App() {
         var loading by remember { mutableStateOf(false) }
         var validating by remember { mutableStateOf(false) }
         var connectError by remember { mutableStateOf<String?>(null) }
-        var apiMode by remember { mutableStateOf(LocalStorageManager.getApiMode()?.let { m -> ApiMode.entries.firstOrNull { it.name == m } } ?: ApiMode.Rest) }
+        var apiMode by remember { mutableStateOf(LocalStorageManager.getApiMode()?.let { m -> ApiMode.entries.firstOrNull { it.name == m } } ?: ApiMode.Hybrid) }
         var rate by remember { mutableStateOf<RateLimitResponse?>(null) }
 
         val scope = rememberCoroutineScope()

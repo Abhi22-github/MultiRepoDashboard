@@ -53,7 +53,11 @@ fun ItemListPane(ctx: InboxContext, modifier: Modifier) {
                     s.query, { s.query = it }, "Search, or type label:, milestone: or author:", Modifier.fillMaxWidth().padding(top = 6.dp),
                     leading = FeatherIcons.Search, height = 40.dp, fontSize = 14.sp
                 )
-                if (s.view != InboxView.Releases) FilterBar(ctx, buildItems(s.view, ctx.scoped, ctx.now), alignEnd = false)
+                val groupCount = items.map { it.repo.config.name }.distinct().size
+                if (s.view != InboxView.Releases) FilterBar(
+                    ctx, buildItems(s.view, ctx.scoped, ctx.now), alignEnd = false,
+                    bulk = if (groupCount > 1) ({ BulkToggle(s) }) else null,
+                )
             }
             ProblemBanner(ctx)
         }
@@ -82,7 +86,7 @@ private fun RepoHead(repo: RepoData, onAll: () -> Unit) {
 
 /** Milestone / Author menus + active filter chips. */
 @Composable
-fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
+fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean, bulk: (@Composable () -> Unit)? = null) {
     val t = LocalTokens.current
     val s = ctx.state
     val f = s.filters
@@ -95,7 +99,7 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
         s.filters = when (key) { "label" -> f.copy(label = v); "milestone" -> f.copy(milestone = v); else -> f.copy(author = v) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 2.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(if (bulk != null) Modifier.fillMaxWidth() else Modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             defs.forEach { (def, get) ->
                 val (key, label, sel) = def
                 val open = s.openFilter == key
@@ -132,6 +136,7 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
                 }
             }
             if (!f.isEmpty) TextLink("Clear all", { s.filters = Filters(); s.openFilter = null })
+            if (bulk != null) { Spacer(Modifier.weight(1f)); bulk() }
         }
         if (!f.isEmpty) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -140,6 +145,20 @@ fun FilterBar(ctx: InboxContext, source: List<Item>, alignEnd: Boolean) {
                 f.author.forEach { v -> ActiveChip("Author: $v") { s.filters = f.copy(author = f.author - v) } }
             }
         }
+    }
+}
+
+/** Expand all / Collapse all repo cards. */
+@Composable
+private fun BulkToggle(s: InboxState) {
+    val t = LocalTokens.current
+    val shape = RoundedCornerShape(10.dp)
+    Row(
+        Modifier.clip(shape).background(t.pane).border(1.dp, t.line, shape).padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        IconBtn(FeatherIcons.ChevronsUpDown, "Expand all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = false }, size = 32.dp)
+        IconBtn(FeatherIcons.ChevronsDownUp, "Collapse all repo cards", { s.collapsed = emptyMap(); s.allCollapsed = true }, size = 32.dp)
     }
 }
 
@@ -219,8 +238,9 @@ private fun ListBody(ctx: InboxContext, items: List<Item>, sel: Item?, modifier:
                 val groups = items.groupBy { it.repo.config.name }.entries.toList()
                 groups.forEachIndexed { idx, (name, gi) ->
                     item(key = "g$name") {
-                        RepoGroup(ctx, gi, sel, collapsed = s.collapsed[name] ?: (idx >= 4)) {
-                            s.collapsed = s.collapsed + (name to !(s.collapsed[name] ?: (idx >= 4)))
+                        val collapsed = s.collapsed[name] ?: s.allCollapsed ?: (idx >= 4)
+                        RepoGroup(ctx, gi, sel, collapsed = collapsed) {
+                            s.collapsed = s.collapsed + (name to !collapsed)
                         }
                     }
                 }

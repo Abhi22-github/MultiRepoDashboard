@@ -12,7 +12,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,7 +25,6 @@ private data class Col(val view: InboxView, val title: String, val items: List<I
 fun BoardView(ctx: InboxContext, modifier: Modifier) {
     val t = LocalTokens.current
     val s = ctx.state
-    val uri = LocalUriHandler.current
     val shape = RoundedCornerShape(14.dp)
     fun build(v: InboxView) = if (ctx.ready) applyFilters(buildItems(v, ctx.scoped, ctx.now), s.filters, s.query) else emptyList()
     val cols = listOf(
@@ -63,7 +61,7 @@ fun BoardView(ctx: InboxContext, modifier: Modifier) {
                     Modifier.horizontalScroll(rememberScrollState()).width(w).fillMaxHeight().padding(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    cols.forEach { c -> BoardColumn(ctx, c, Modifier.weight(1f)) { url -> uri.openUri(url) } }
+                    cols.forEach { c -> BoardColumn(ctx, c, Modifier.weight(1f)) }
                 }
             }
         }
@@ -71,7 +69,7 @@ fun BoardView(ctx: InboxContext, modifier: Modifier) {
 }
 
 @Composable
-private fun BoardColumn(ctx: InboxContext, c: Col, modifier: Modifier, open: (String) -> Unit) {
+private fun BoardColumn(ctx: InboxContext, c: Col, modifier: Modifier) {
     val t = LocalTokens.current
     val s = ctx.state
     val shape = RoundedCornerShape(16.dp)
@@ -101,17 +99,6 @@ private fun BoardColumn(ctx: InboxContext, c: Col, modifier: Modifier, open: (St
         }
         if (c.items.isEmpty()) Box(Modifier.fillMaxWidth().padding(vertical = 18.dp, horizontal = 8.dp), contentAlignment = Alignment.Center) {
             Txt(c.empty, size = 13.sp, color = t.muted)
-        }
-        val scopedRepo = s.repoScope?.let { n -> ctx.repos.firstOrNull { it.config.name == n } }
-        if (c.warn && c.items.isNotEmpty() && scopedRepo != null) {
-            val bshape = RoundedCornerShape(10.dp)
-            Row(
-                Modifier.fillMaxWidth().height(38.dp).clip(bshape).background(t.pane).border(1.dp, t.warnLine, bshape).click { open(scopedRepo.compareUrl()) },
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
-            ) {
-                Txt("Compare on GitHub", size = 13.sp, weight = FontWeight.SemiBold, color = t.warn)
-                Ico(FeatherIcons.ExternalLink, 13.dp, t.warn)
-            }
         }
     }
 }

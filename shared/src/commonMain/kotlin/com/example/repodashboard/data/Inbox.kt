@@ -93,7 +93,7 @@ private const val MAX_OPEN_PAGES = 20      // 2,000 open PRs per repo
 private const val MAX_MERGED_PAGES = 5     // ~440-500 merged PRs per repo
 private const val MAX_RELEASE_PAGES = 20   // 2,000 releases per repo
 
-suspend fun loadInbox(client: GitHubClient, config: AppConfig, apiBase: String, mode: ApiMode = ApiMode.Rest): InboxData = coroutineScope {
+suspend fun loadInbox(client: GitHubClient, config: AppConfig, apiBase: String, mode: ApiMode = ApiMode.Hybrid): InboxData = coroutineScope {
     val web = webBaseOf(apiBase)
     val results = config.repositories.map { rc ->
         async { if (mode == ApiMode.GraphQL) loadRepoGraphQL(client, rc, web) else loadRepoRest(client, rc, web) }

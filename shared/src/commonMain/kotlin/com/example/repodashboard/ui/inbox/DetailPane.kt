@@ -129,7 +129,7 @@ private fun PrDetailView(ctx: InboxContext, it: Item) {
                 Ico(FeatherIcons.ArrowRight, 14.dp, t.muted)
                 Txt(pr.base.ref, size = 13.sp, mono = true, maxLines = 1)
             }
-            CopyButton(pr.head.ref, "Copy branch")
+            CopyButton(pr.head.ref, "Copy")
         }
         Txt("Once merged it will show under Unreleased until a release includes it.", size = 13.sp, color = t.muted)
     }

@@ -129,6 +129,18 @@ object FeatherIcons {
     val ChevronRight: ImageVector = stroke("chevron-right") { moveTo(9f, 18f); lineTo(15f, 12f); lineTo(9f, 6f) }
     val ChevronDown: ImageVector  = stroke("chevron-down")  { moveTo(6f, 9f); lineTo(12f, 15f); lineTo(18f, 9f) }
 
+    /** Expand all: chevrons pointing apart. */
+    val ChevronsUpDown: ImageVector = stroke("chevrons-up-down") {
+        moveTo(7f, 15f); lineTo(12f, 20f); lineTo(17f, 15f)
+        moveTo(7f, 9f); lineTo(12f, 4f); lineTo(17f, 9f)
+    }
+
+    /** Collapse all: chevrons pointing together. */
+    val ChevronsDownUp: ImageVector = stroke("chevrons-down-up") {
+        moveTo(7f, 20f); lineTo(12f, 15f); lineTo(17f, 20f)
+        moveTo(7f, 4f); lineTo(12f, 9f); lineTo(17f, 4f)
+    }
+
     val Search: ImageVector = stroke("search") {
         circleP(11f, 11f, 8f); lineP(21f, 21f, 16.65f, 16.65f)
     }

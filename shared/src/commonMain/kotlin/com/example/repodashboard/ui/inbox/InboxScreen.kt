@@ -43,6 +43,8 @@ class InboxState(private val scope: CoroutineScope, private val client: () -> Gi
     var filters by mutableStateOf(Filters())
     var openFilter by mutableStateOf<String?>(null)
     var collapsed by mutableStateOf<Map<String, Boolean>>(emptyMap())
+    /** Set by "Expand all" / "Collapse all"; per-repo [collapsed] entries win over it. */
+    var allCollapsed by mutableStateOf<Boolean?>(null)
     var listW by mutableStateOf((LocalStorageManager.getListWidth() ?: 480).coerceIn(360, 760).toFloat())
     var repoQuery by mutableStateOf("")
     var quietOpen by mutableStateOf(false)
@@ -219,8 +221,8 @@ private fun TopBar(
                     LayoutToggle("Board", FeatherIcons.Columns, state.layout == Layout.Board) { state.layout = Layout.Board; state.openFilter = null }
                 }
                 Txt(synced, Modifier.padding(start = 18.dp, end = 10.dp), size = 12.sp, color = t.muted, maxLines = 1)
-                devTools()
                 IconBtn(FeatherIcons.RefreshCw, "Refresh from GitHub", onRefresh)
+                devTools()
                 IconBtn(if (isDark) FeatherIcons.Sun else FeatherIcons.Moon, if (isDark) "Switch to light mode" else "Switch to dark mode", onToggleTheme)
                 IconBtn(FeatherIcons.Sliders, "Manage repositories", onManageRepos)
                 IconBtn(FeatherIcons.LogOut, "Sign out", onSignOut)
@@ -270,10 +272,13 @@ private fun RepoPanel(ctx: InboxContext, modifier: Modifier) {
     val s = ctx.state
     val rq = s.repoQuery.trim().lowercase()
     val countIn = { r: RepoData? -> buildItems(s.view, r?.let { listOf(it) } ?: ctx.repos, ctx.now).size }
+    val counts = ctx.repos.associate { it.config.name to countIn(it) }
     val matching = ctx.repos.filter { rq.isEmpty() || it.name.lowercase().contains(rq) }
-    val shown = if (rq.isNotEmpty() || s.quietOpen) matching
-        else matching.filter { it.config.name in ctx.pinned || it.config.name == s.repoScope || countIn(it) > 0 }
-    val hidden = matching.size - shown.size
+    val starred = matching.filter { it.config.name in ctx.pinned }
+    val rest = matching.filter { it.config.name !in ctx.pinned }
+    val withWork = rest.filter { (counts[it.config.name] ?: 0) > 0 }
+    val quiet = rest.filter { (counts[it.config.name] ?: 0) == 0 }.sortedBy { it.name.lowercase() }
+    val quietShown = s.quietOpen || rq.isNotEmpty()
 
     Column(modifier.padding(horizontal = 10.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Txt("Repositories", Modifier.padding(horizontal = 8.dp, vertical = 2.dp), size = 12.sp, weight = FontWeight.SemiBold, color = t.muted)
@@ -282,10 +287,21 @@ private fun RepoPanel(ctx: InboxContext, modifier: Modifier) {
             leading = FeatherIcons.Search, height = 38.dp, bg = t.pane, border = t.line, fontSize = 13.sp
         )
         LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
-            item { RepoRow(ctx, null) }
-            items(shown, key = { it.config.name }) { RepoRow(ctx, it) }
-            if (hidden > 0 || (s.quietOpen && rq.isEmpty())) item {
-                TextLink(if (s.quietOpen) "Only repos with activity" else "+ $hidden repos with nothing here", { s.quietOpen = !s.quietOpen }, size = 12.sp)
+            item { RepoRow(ctx, null, countIn(null)) }
+            fun section(title: String, list: List<RepoData>, shown: Boolean = true) {
+                if (list.isEmpty()) return
+                item(key = "t-$title") {
+                    Txt("$title · ${list.size}", Modifier.padding(start = 10.dp, end = 10.dp, top = 12.dp, bottom = 4.dp), size = 11.sp, weight = FontWeight.Bold, color = t.muted)
+                }
+                if (shown) items(list, key = { it.config.name }) { RepoRow(ctx, it, counts[it.config.name] ?: 0) }
+            }
+            section("Starred", starred)
+            section("With activity", withWork)
+            section("Quiet", quiet, quietShown)
+            if (quiet.isNotEmpty() && rq.isEmpty()) item(key = "quiet-toggle") {
+                Box(Modifier.padding(4.dp)) {
+                    TextLink(if (s.quietOpen) "Hide quiet repos" else "Show ${quiet.size} quiet repos", { s.quietOpen = !s.quietOpen }, size = 12.sp)
+                }
             }
             if (ctx.ready && ctx.repos.isEmpty()) item { Txt("No repositories yet.", Modifier.padding(10.dp), size = 13.sp, color = t.muted) }
         }
@@ -293,7 +309,7 @@ private fun RepoPanel(ctx: InboxContext, modifier: Modifier) {
 }
 
 @Composable
-private fun RepoRow(ctx: InboxContext, repo: RepoData?) {
+private fun RepoRow(ctx: InboxContext, repo: RepoData?, count: Int) {
     val t = LocalTokens.current
     val s = ctx.state
     val on = s.repoScope == repo?.config?.name
@@ -311,14 +327,22 @@ private fun RepoRow(ctx: InboxContext, repo: RepoData?) {
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Txt(repo?.name ?: "All repositories", size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) t.ink else t.ink2, maxLines = 1)
+                Txt(
+                    repo?.name ?: "All repositories", size = 13.sp, weight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    color = when { on -> t.ink; count > 0 || !ctx.ready -> t.ink2; else -> t.muted }, maxLines = 1
+                )
                 if (hasFail) Box(Modifier.semantics { contentDescription = "Has failing checks" }) { Dot(t.fail, size = 6.dp) }
             }
             if (ctx.ready) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Ico(FeatherIcons.Tag, 10.dp, t.muted)
-                        Txt(repo?.let { it.latestTag ?: "no release" } ?: "${ctx.repos.size} repos", size = 11.sp, color = t.muted, mono = repo != null, maxLines = 1)
+                    val hasTag = repo?.latestTag != null
+                    val tagFg = if (hasTag) t.ok else t.muted
+                    Row(
+                        Modifier.clip(RoundedCornerShape(5.dp)).background(if (hasTag) t.okSoft else t.bg).padding(horizontal = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Ico(FeatherIcons.Tag, 10.dp, tagFg)
+                        Txt(repo?.let { it.latestTag ?: "no release" } ?: "${ctx.repos.size} repos", size = 11.sp, weight = FontWeight.Medium, color = tagFg, mono = true, maxLines = 1)
                     }
                     if (open > 0) Chip("$open open", t.bg, t.ink2, weight = FontWeight.Normal, radius = 4.dp)
                     if (unrel > 0) Chip("$unrel unreleased", t.warnSoft, t.warn, weight = FontWeight.Normal, radius = 4.dp)
