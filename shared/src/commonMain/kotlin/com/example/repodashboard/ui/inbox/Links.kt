@@ -37,7 +37,7 @@ data class PrLinks(val jira: List<JiraRef>, val deps: List<DepRef>, val other: L
     ).joinToString(" · ")
 }
 
-private val MD_LINK = Regex("""(!?)\[([^\]]*)]\((https?://[^\s)]+)\)""")
+private val MD_LINK = Regex("""(!?)\[([^\]]*)\]\((https?://[^\s)]+)\)""")
 private val BARE_URL = Regex("""https?://[^\s)<>\]"'`]+""")
 private val JIRA_KEY = Regex("""\b([A-Z][A-Z0-9]{1,9}-\d+)\b""")
 private val JIRA_BROWSE = Regex("""^(https?://[^/]+)/browse/([A-Z][A-Z0-9]{1,9}-\d+)""")
